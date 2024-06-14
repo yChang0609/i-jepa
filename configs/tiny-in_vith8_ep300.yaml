@@ -4,9 +4,9 @@ data:
   crop_scale:
   - 0.3
   - 1.0
-  crop_size: 64
+  crop_size: 48
   image_folder: tiny-imagenet-200/
-  num_workers: 10
+  num_workers: 2
   pin_mem: true
   root_path: /content/dataset/
   use_color_distortion: false
