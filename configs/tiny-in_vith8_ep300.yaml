@@ -1,10 +1,10 @@
 data:
-  batch_size: 64
+  batch_size: 8
   color_jitter_strength: 0.0
   crop_scale:
-  - 0.3
+  - 0.1
   - 1.0
-  crop_size: 48
+  crop_size: 64
   image_folder: tiny-imagenet-200/
   num_workers: 2
   pin_mem: true
@@ -13,7 +13,7 @@ data:
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: logs/vith14.64-bs.t4-ep.300/
+  folder: logs/vith8.48-bs.64-ep.300/
   write_tag: jepa
 mask:
   allow_overlap: false
@@ -23,9 +23,9 @@ mask:
   enc_mask_scale:
   - 0.85
   - 1.0
-  min_keep: 10
+  min_keep: 4
   num_enc_masks: 1
-  num_pred_masks: 4
+  num_pred_masks: 2
   patch_size: 8
   pred_mask_scale:
   - 0.15
@@ -33,7 +33,7 @@ mask:
 meta:
   copy_data: false
   load_checkpoint: false
-  model_name: vit_huge
+  model_name: vit_tiny
   pred_depth: 12
   pred_emb_dim: 384
   read_checkpoint: null
