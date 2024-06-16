@@ -104,7 +104,7 @@ def init_model(
     predictor.to(device)
     # logger.info(encoder)
     print("Encoder & Decoder model summary:")
-    summary(encoder,(3, 224, 224))
+    summary(encoder,(3, crop_size, crop_size))
 
     return encoder, predictor
 
