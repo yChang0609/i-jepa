@@ -16,6 +16,8 @@ from src.utils.schedulers import (
     CosineWDSchedule)
 from src.utils.tensors import trunc_normal_
 
+from torchsummary import summary
+
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
@@ -100,7 +102,12 @@ def init_model(
 
     encoder.to(device)
     predictor.to(device)
-    logger.info(encoder)
+    # logger.info(encoder)
+    print("Encoder & Decoder model summary:")
+    summary(encoder)
+
+    print("Predictor model summary:")
+    summary(predictor)
     return encoder, predictor
 
 
