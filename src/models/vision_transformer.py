@@ -263,7 +263,7 @@ class ConvEmbed(nn.Module):
 
         # Comptute the number of patches
         stride_prod = int(np.prod(strides))
-        self.num_patches = (img_size[0] // stride_prod)**2
+        self.num_patches = (img_size // stride_prod)**2
 
     def forward(self, x):
         p = self.stem(x)
