@@ -521,8 +521,10 @@ class VisionTransformerConv(nn.Module):
         self.num_heads = num_heads
         # --
         # channels, strides, img_size=224, in_chans=3, batch_norm=True
-        channels = [64,64,128,128,256,256,512,embed_dim]
-        strides = [16,16,8,8,4,4,2,2]
+        # channels = [embed_dim]
+        # strides = [patch_size]
+        channels = [16,32,64,128,embed_dim]
+        strides = [1,1,1,1,patch_size]
         self.patch_embed = ConvEmbed(
             channels = channels,
             strides = strides,
