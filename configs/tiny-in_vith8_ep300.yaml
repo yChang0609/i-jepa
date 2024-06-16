@@ -33,7 +33,7 @@ mask:
 meta:
   copy_data: false
   load_checkpoint: false
-  model_name: vit_large
+  model_name: vitc_tiny
   pred_depth: 12
   pred_emb_dim: 384
   read_checkpoint: null
