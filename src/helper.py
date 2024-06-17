@@ -102,9 +102,7 @@ def init_model(
 
     encoder.to(device)
     predictor.to(device)
-    # logger.info(encoder)
-    print("Encoder & Decoder model summary:")
-    summary(encoder,(3, 224, 224))
+    logger.info(encoder)
 
     return encoder, predictor
 
