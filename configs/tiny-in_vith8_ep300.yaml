@@ -8,7 +8,7 @@ data:
   image_folder: tiny-imagenet-200/
   num_workers: 2
   pin_mem: true
-  root_path: /content/dataset/
+  root_path: /home/chang/Documents/projects/i-jepa/dataset
   use_color_distortion: false
   use_gaussian_blur: false
   use_horizontal_flip: false
