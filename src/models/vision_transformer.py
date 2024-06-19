@@ -20,6 +20,8 @@ from src.utils.tensors import (
 )
 from src.masks.utils import apply_masks
 
+from math import log2
+
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """
@@ -245,27 +247,39 @@ class ConvEmbed(nn.Module):
         return p.flatten(2).transpose(1, 2)
 
 class CnnEmbed(nn.Module):
-
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, batch_norm=True):
         super().__init__()
         # Build the stems
-        self.stem = nn.Sequential(  
-            nn.Conv2d(in_chans, 64, kernel_size=2, stride=2,bias=(not batch_norm))
-            ,nn.Conv2d(64, 64, kernel_size=1, stride=1,bias=(not batch_norm))
-            ,nn.BatchNorm2d(64)
-            ,nn.Conv2d(64, 128, kernel_size=2, stride=2,bias=(not batch_norm))
-            ,nn.Conv2d(128, 128, kernel_size=1, stride=1,bias=(not batch_norm))
-            ,nn.BatchNorm2d(128)
-            ,nn.Conv2d(128, 256, kernel_size=2, stride=2,bias=(not batch_norm))
-            ,nn.Conv2d(256, embed_dim, kernel_size=1, stride=1,bias=(not batch_norm))
-            ,nn.BatchNorm2d(embed_dim)
-        )
+        assert patch_size&(patch_size-1) == 0 #e.g. 100 & 011 = 000 
+        stem = []
+        init_channel = 64
+        max_channel = 1024
+        in_channel = in_chans
+        for i in range(int(log2(patch_size))):
+            if i != int(log2(patch_size))-1:
+                out_channel = init_channel*(pow(2,i)) if init_channel*(pow(2,i)) < max_channel else max_channel
+                stem +=[nn.Conv2d(in_channel, out_channel, kernel_size=2, stride=2,bias=(not batch_norm))]
+                stem +=[nn.Conv2d(out_channel, out_channel, kernel_size=1, stride=1,bias=(not batch_norm))]
+                if batch_norm:
+                    stem += [nn.BatchNorm2d(out_channel)]
+                stem += [nn.ReLU(inplace=True)]
+            else:
+                out_channel = embed_dim
+                stem +=[nn.Conv2d(in_channel, out_channel, kernel_size=2, stride=2)]
+            in_channel = out_channel
+        self.stem = nn.Sequential(*stem)
         self.num_patches = (img_size // patch_size)**2
 
     def forward(self, x):
         p = self.stem(x)
         return p.flatten(2).transpose(1, 2)
 
+class UnetEmbed(nn.Module):
+    def __init__(self, image_size):
+        pass
+
+    def forward(self, x):
+        pass
 
 class VisionTransformerPredictor(nn.Module):
     """ Vision Transformer """
