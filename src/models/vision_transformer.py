@@ -274,13 +274,6 @@ class CnnEmbed(nn.Module):
         p = self.stem(x)
         return p.flatten(2).transpose(1, 2)
 
-class UnetEmbed(nn.Module):
-    def __init__(self, image_size):
-        pass
-
-    def forward(self, x):
-        pass
-
 class VisionTransformerPredictor(nn.Module):
     """ Vision Transformer """
     def __init__(
