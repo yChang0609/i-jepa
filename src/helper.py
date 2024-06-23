@@ -16,6 +16,8 @@ from src.utils.schedulers import (
     CosineWDSchedule)
 from src.utils.tensors import trunc_normal_
 
+from torchsummary import summary
+
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
@@ -71,11 +73,15 @@ def init_model(
     model_name='vit_base',
     crop_size=224,
     pred_depth=6,
-    pred_emb_dim=384
+    pred_emb_dim=384,
+    conv_channels = [],
+    conv_strides = []
 ):
     encoder = vit.__dict__[model_name](
         img_size=[crop_size],
-        patch_size=patch_size)
+        patch_size=patch_size,
+        conv_channels = conv_channels,
+        conv_strides = conv_strides)
     predictor = vit.__dict__['vit_predictor'](
         num_patches=encoder.patch_embed.num_patches,
         embed_dim=encoder.embed_dim,
@@ -101,6 +107,7 @@ def init_model(
     encoder.to(device)
     predictor.to(device)
     logger.info(encoder)
+
     return encoder, predictor
 
 

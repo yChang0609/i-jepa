@@ -73,6 +73,9 @@ def main(args, resume_preempt=False):
     # -- META
     use_bfloat16 = args['meta']['use_bfloat16']
     model_name = args['meta']['model_name']
+    conv_channels = args['meta']['conv_channels']
+    conv_strides = args['meta']['conv_strides']
+
     load_model = args['meta']['load_checkpoint'] or resume_preempt
     r_file = args['meta']['read_checkpoint']
     copy_data = args['meta']['copy_data']
@@ -124,6 +127,9 @@ def main(args, resume_preempt=False):
     # -- LOGGING
     folder = args['logging']['folder']
     tag = args['logging']['write_tag']
+    
+    if not os.path.exists(folder):
+        os.makedirs(folder)
 
     dump = os.path.join(folder, 'params-ijepa.yaml')
     with open(dump, 'w') as f:
@@ -165,7 +171,9 @@ def main(args, resume_preempt=False):
         crop_size=crop_size,
         pred_depth=pred_depth,
         pred_emb_dim=pred_emb_dim,
-        model_name=model_name)
+        model_name=model_name,
+        conv_channels = conv_channels,
+        conv_strides = conv_strides)
     target_encoder = copy.deepcopy(encoder)
 
     # -- make data transforms
