@@ -20,6 +20,8 @@ from src.utils.tensors import (
 )
 from src.masks.utils import apply_masks
 
+from math import log2
+
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """
@@ -95,57 +97,6 @@ def drop_path(x, drop_prob: float = 0., training: bool = False):
     return output
 
 
-class Vgg16(nn.Module):
-    '''
-    ModuleList(
-    (0): Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (1): ReLU(inplace=True)
-    (2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    * (3): ReLU(inplace=True)
-    (4): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
-    (5): Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (6): ReLU(inplace=True)
-    (7): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    * (8): ReLU(inplace=True)
-    (9): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
-    (10): Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (11): ReLU(inplace=True)
-    (12): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (13): ReLU(inplace=True)
-    (14): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    * (15): ReLU(inplace=True)
-    (16): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
-    (17): Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (18): ReLU(inplace=True)
-    (19): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (20): ReLU(inplace=True)
-    (21): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    * (22): ReLU(inplace=True)
-    (23): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
-    (24): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (25): ReLU(inplace=True)
-    (26): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    (27): ReLU(inplace=True)
-    (28): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-    * (29): ReLU(inplace=True)
-    (30): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
-    )
-    '''
-    def __init__(self, pretrained = True):
-        super(Vgg16, self).__init__()
-        self.vggnet = models.vgg16(pretrained)
-        del(self.vggnet.classifier) # Remove fully connected layer to save memory.
-        features = list(self.vggnet.features)
-        self.layers = nn.ModuleList(features).eval()
-        
-    def forward(self, x):
-        results = []
-        for ii,model in enumerate(self.layers):
-            x = model(x)
-            if ii in [3,8,15,22,29]:
-                results.append(x) #(64,256,256),(128,128,128),(256,64,64),(512,32,32),(512,16,16)
-        return results
-    
 class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
     """
@@ -223,7 +174,33 @@ class Block(nn.Module):
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
+class DoubleConv(nn.Module):
+    """(convolution => [BN] => ReLU) * 2"""
+    def __init__(self, in_channels, out_channels, mid_channels=None):
+        super().__init__()
+        if not mid_channels:
+            mid_channels = out_channels
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self, x):
+        return self.double_conv(x)
 
+class DeConv(nn.Module):
+    def __int__(self, in_channel, out_channel, kernel_size, stride, padding, dilation):
+        super().__init__()
+        self.up = nn.Upsample(scale_factor=2,mode='nearest')
+        self.conv = nn.DoubleConv(in_channel, out_channel, kernel_size = kernel_size, stride = stride, padding = padding, dilation = dilation)
+    def forward(self,x):
+        x = self.up(x)
+        x = self.conv(x)
+        return x
+    
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
@@ -269,6 +246,33 @@ class ConvEmbed(nn.Module):
         p = self.stem(x)
         return p.flatten(2).transpose(1, 2)
 
+class CnnEmbed(nn.Module):
+    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, batch_norm=True):
+        super().__init__()
+        # Build the stems
+        assert patch_size&(patch_size-1) == 0 #e.g. 100 & 011 = 000 
+        stem = []
+        init_channel = 64
+        max_channel = 1024
+        in_channel = in_chans
+        for i in range(int(log2(patch_size))):
+            if i != int(log2(patch_size))-1:
+                out_channel = init_channel*(pow(2,i)) if init_channel*(pow(2,i)) < max_channel else max_channel
+                stem +=[nn.Conv2d(in_channel, out_channel, kernel_size=2, stride=2,bias=(not batch_norm))]
+                stem +=[nn.Conv2d(out_channel, out_channel, kernel_size=1, stride=1,bias=(not batch_norm))]
+                if batch_norm:
+                    stem += [nn.BatchNorm2d(out_channel)]
+                stem += [nn.ReLU(inplace=True)]
+            else:
+                out_channel = embed_dim
+                stem +=[nn.Conv2d(in_channel, out_channel, kernel_size=2, stride=2)]
+            in_channel = out_channel
+        self.stem = nn.Sequential(*stem)
+        self.num_patches = (img_size // patch_size)**2
+
+    def forward(self, x):
+        p = self.stem(x)
+        return p.flatten(2).transpose(1, 2)
 
 class VisionTransformerPredictor(nn.Module):
     """ Vision Transformer """
@@ -377,7 +381,6 @@ class VisionTransformerPredictor(nn.Module):
         x = self.predictor_proj(x)
 
         return x
-
 
 class VisionTransformer(nn.Module):
     """ Vision Transformer """
@@ -493,9 +496,8 @@ class VisionTransformer(nn.Module):
         pos_embed = pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_emb.unsqueeze(0), pos_embed), dim=1)
 
-
-class VisionTransformerConv(nn.Module):
-    """ Vision Transformer Convolutions """
+class VisionTransformerFrame(nn.Module):
+    """ Vision Transformer """
     def __init__(
         self,
         img_size=[224],
@@ -514,23 +516,21 @@ class VisionTransformerConv(nn.Module):
         drop_path_rate=0.0,
         norm_layer=nn.LayerNorm,
         init_std=0.02,
+        embed = None,
         **kwargs
     ):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim
         self.num_heads = num_heads
         # --
-        # channels, strides, img_size=224, in_chans=3, batch_norm=True
-        # channels = [embed_dim]
-        # strides = [patch_size]
-        channels = [16,32,64,128,embed_dim]
-        strides = [1,1,1,1,patch_size]
-        self.patch_embed = ConvEmbed(
-            channels = channels,
-            strides = strides,
-            img_size=img_size[0],
-            in_chans=in_chans)
-        
+        if embed == None:
+            self.patch_embed = PatchEmbed(
+                img_size=img_size[0],
+                patch_size=patch_size,
+                in_chans=in_chans,
+                embed_dim=embed_dim)
+        else:
+            self.patch_embed = embed
         num_patches = self.patch_embed.num_patches
         # --
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim), requires_grad=False)
@@ -614,10 +614,129 @@ class VisionTransformerConv(nn.Module):
         pos_embed = pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_emb.unsqueeze(0), pos_embed), dim=1)
 
+class VisionTransformerConv(VisionTransformerFrame):
+    """ Vision Transformer Convolutions """
+    def __init__(
+        self,
+        img_size=[224],
+        patch_size=16,
+        in_chans=3,
+        embed_dim=768,
+        predictor_embed_dim=384,
+        depth=12,
+        predictor_depth=12,
+        num_heads=12,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.0,
+        norm_layer=nn.LayerNorm,
+        init_std=0.02,
+        **kwargs
+    ):
+        # --
+        # channels, strides, img_size=224, in_chans=3, batch_norm=True
+        # channels = [embed_dim]
+        # strides = [patch_size]
+        channels = [16,32,64,128,embed_dim]
+        strides = [1,1,1,1,patch_size]
+        patch_embed = ConvEmbed(
+            channels = channels,
+            strides = strides,
+            img_size=img_size[0],
+            in_chans=in_chans)
+        # --
+        super().__init__(        
+            self,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
+            predictor_embed_dim=predictor_embed_dim,
+            depth=depth,
+            predictor_depth=predictor_depth,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            drop_rate=drop_rate,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            norm_layer=norm_layer,
+            init_std = init_std,
+            embed = patch_embed,
+            **kwargs
+        )
+
+class VisionTransformerUnet(VisionTransformerFrame):
+    """ Vision Transformer Convolutions """
+    def __init__(
+        self,
+        img_size=[224],
+        patch_size=16,
+        in_chans=3,
+        embed_dim=768,
+        predictor_embed_dim=384,
+        depth=12,
+        predictor_depth=12,
+        num_heads=12,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.0,
+        norm_layer=nn.LayerNorm,
+        init_std=0.02,
+        **kwargs
+    ):
+        # --
+        patch_embed = CnnEmbed(
+            img_size=img_size[0],
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim)
+        # --
+        super().__init__(        
+            self,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
+            predictor_embed_dim=predictor_embed_dim,
+            depth=depth,
+            predictor_depth=predictor_depth,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            drop_rate=drop_rate,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            norm_layer=norm_layer,
+            init_std = init_std,
+            embed = patch_embed,
+            **kwargs
+        )
+
+        
+
 def vit_predictor(**kwargs):
     model = VisionTransformerPredictor(
         mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),
         **kwargs)
+    return model
+
+def vitu_tiny(patch_size=16, **kwargs):
+    model = VisionTransformerUnet(
+        patch_size=patch_size, embed_dim=192, depth=11, num_heads=3, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
+def vitu_base(patch_size=16, **kwargs):
+    model = VisionTransformerUnet(
+        patch_size=patch_size, embed_dim=768, depth=6, num_heads=12, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 def vitc_tiny(patch_size=16, **kwargs):

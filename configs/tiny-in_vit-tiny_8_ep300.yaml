@@ -13,7 +13,7 @@ data:
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: logs/vith8.48-bs.64-ep.300/
+  folder: logs/tiny-in_vit-tiny_8_ep300.yaml/
   write_tag: jepa
 mask:
   allow_overlap: false
