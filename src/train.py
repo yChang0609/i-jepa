@@ -73,7 +73,6 @@ def main(args, resume_preempt=False):
     # -- META
     use_bfloat16 = args['meta']['use_bfloat16']
     model_name = args['meta']['model_name']
-    use_conv_emb = args['meta']['use_conv_emb']
     conv_channels = args['meta']['conv_channels']
     conv_strides = args['meta']['conv_strides']
 
@@ -173,7 +172,6 @@ def main(args, resume_preempt=False):
         pred_depth=pred_depth,
         pred_emb_dim=pred_emb_dim,
         model_name=model_name,
-        use_conv_emb = use_conv_emb,
         conv_channels = conv_channels,
         conv_strides = conv_strides)
     target_encoder = copy.deepcopy(encoder)

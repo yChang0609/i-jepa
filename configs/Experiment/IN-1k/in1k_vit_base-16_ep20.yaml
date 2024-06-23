@@ -34,7 +34,6 @@ meta:
   copy_data: false
   load_checkpoint: false
   model_name: vit_base
-  use_conv_emb: false
   conv_channels:
   - 64
   - 128

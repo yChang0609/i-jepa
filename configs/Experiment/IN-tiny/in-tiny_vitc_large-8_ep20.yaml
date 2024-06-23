@@ -34,7 +34,6 @@ meta:
   copy_data: false
   load_checkpoint: false
   model_name: vitc_large
-  use_conv_emb: true
   conv_channels:
   - 64
   - 128

@@ -363,7 +363,7 @@ class VisionTransformer(nn.Module):
             if kwargs["use_conv_emb"] :
                 channels = kwargs["conv_channels"]
                 channels.append(embed_dim)
-                strides = kwargs["use_conv_emb"]
+                strides = kwargs["conv_strides"]
                 strides.append(1)
                 self.patch_embed = ConvEmbed(
                     channels = channels,
@@ -460,13 +460,55 @@ def vit_predictor(**kwargs):
         mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),
         **kwargs)
     return model
-
+# -- ViTC
 def vitc_tiny(patch_size=16, **kwargs):
+    use_conv_emb = True
     model = VisionTransformer(
         patch_size=patch_size, embed_dim=192, depth=11, num_heads=3, mlp_ratio=4,
-        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
+
+def vitc_small(patch_size=16, **kwargs):
+    use_conv_emb = True
+    model = VisionTransformer(
+        patch_size=patch_size, embed_dim=384, depth=11, num_heads=6, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
+    return model
+
+
+def vitc_base(patch_size=16, **kwargs):
+    use_conv_emb = True
+    model = VisionTransformer(
+        patch_size=patch_size, embed_dim=768, depth=11, num_heads=12, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
+    return model
+
+
+def vitc_large(patch_size=16, **kwargs):
+    use_conv_emb = True
+    model = VisionTransformer(
+        patch_size=patch_size, embed_dim=1024, depth=23, num_heads=16, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
+    return model
+
+
+def vitc_huge(patch_size=16, **kwargs):
+    use_conv_emb = True
+    model = VisionTransformer(
+        patch_size=patch_size, embed_dim=1280, depth=31, num_heads=16, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
+    return model
+
+
+def vitc_giant(patch_size=16, **kwargs):
+    use_conv_emb = True
+    model = VisionTransformer(
+        patch_size=patch_size, embed_dim=1408, depth=39, num_heads=16, mlp_ratio=48/11,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
+    return model
+
+# -- ViT
 def vit_tiny(patch_size=16, **kwargs):
     model = VisionTransformer(
         patch_size=patch_size, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4,
