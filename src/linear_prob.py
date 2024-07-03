@@ -253,9 +253,15 @@ def main(args, resume_preempt=False):
                 optimizer.step()
                 grad_stats = grad_logger(linear_probe.named_parameters())
 
-                return (float(loss), grad_stats)
+                correct = 0
+                total = 0
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+                accuracy = 100 * correct / total
+                return (float(loss), accuracy, grad_stats)
             
-            (loss, grad_stats), etime = gpu_timer(train_step)
+            (loss, accuracy, grad_stats), etime = gpu_timer(train_step)
             loss_meter.update(loss)
             time_meter.update(etime)
 
@@ -264,10 +270,12 @@ def main(args, resume_preempt=False):
                 csv_logger.log(epoch + 1, itr, loss, etime)
                 if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
                     logger.info('[%d, %5d] loss: %.3f '
+                                '[Accuracy:%.2f %]'
                                 '[mem: %.2e] '
                                 '(%.1f ms)'
                                 % (epoch + 1, itr,
                                    loss_meter.avg,
+                                   accuracy,
                                    torch.cuda.max_memory_allocated() / 1024.**2,
                                    time_meter.avg))
 
