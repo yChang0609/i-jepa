@@ -38,6 +38,7 @@ from src.utils.tensors import repeat_interleave_batch
 from src.datasets.imagenet1k import make_imagenet_tiny
 
 from src.helper import (
+    load_encoder,
     load_checkpoint,
     init_model,
     init_opt)
@@ -70,7 +71,7 @@ class LinearProbe(nn.Module):
 
     def forward(self, image):
         x = self.pre_train(image)
-        x = torch.flatten(x)
+        x = torch.flatten(x,1)
         return self.linear(x)
 
 def main(args, resume_preempt=False):
@@ -184,14 +185,10 @@ def main(args, resume_preempt=False):
         conv_strides = conv_strides)
     target_encoder = copy.deepcopy(encoder)
 
-    encoder, predictor, target_encoder, optimizer, scaler, start_epoch = load_checkpoint(
+    encoder, _ = load_encoder(
         device=device,
         r_path=load_path,
-        encoder=encoder,
-        predictor=predictor,
-        target_encoder=target_encoder,
-        opt=optimizer,
-        scaler=scaler)
+        encoder=encoder)
     
     del predictor
     del target_encoder
@@ -217,21 +214,11 @@ def main(args, resume_preempt=False):
             image_folder=image_folder,
             copy_data=copy_data,
             drop_last=True)
-    ipe = len(train_loader)
-
-    encoder = DistributedDataParallel(encoder, static_graph=True)
-    predictor = DistributedDataParallel(predictor, static_graph=True)
-    target_encoder = DistributedDataParallel(target_encoder)
-    for p in target_encoder.parameters():
-        p.requires_grad = False
-
-    # -- momentum schedule
-    momentum_scheduler = (ema[0] + i*(ema[1]-ema[0])/(ipe*num_epochs*ipe_scale)
-                          for i in range(int(ipe*num_epochs*ipe_scale)+1))
-
+    
     linear_probe = LinearProbe(encoder, len(dataset_imgnet.classes), freeze = True)
-    optimizer = torch.optim.AdamW(linear_probe)
+    optimizer = torch.optim.AdamW(linear_probe.parameters())
     criterion = nn.CrossEntropyLoss()
+    linear_probe.to(device)
     
     def save_checkpoint(epoch):
         save_dict = {

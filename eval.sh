@@ -1,0 +1,1 @@
+python3 main_probing.py --fname logs/in-tiny_vitc_tiny-8_ep20 --devices cuda:0 

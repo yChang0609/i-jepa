@@ -32,7 +32,7 @@ def make_imagenet_tiny(
     drop_last=True,
     subset_file=None
 ):
-    dataset = ImageNet(
+    train_dataset = ImageNet(
         root=root_path,
         image_folder=image_folder,
         transform=transform,
@@ -40,14 +40,14 @@ def make_imagenet_tiny(
         copy_data=copy_data,
         index_targets=False)
     if subset_file is not None:
-        dataset = ImageNetSubset(dataset, subset_file)
+        train_dataset = ImageNetSubset(train_dataset, subset_file)
     logger.info('ImageNet train dataset created')
     train_dist_sampler = torch.utils.data.distributed.DistributedSampler(
-        dataset=dataset,
+        dataset=train_dataset,
         num_replicas=world_size,
         rank=rank)
     train_loader = torch.utils.data.DataLoader(
-        dataset,
+        train_dataset,
         sampler=train_dist_sampler,
         batch_size=batch_size,
         drop_last=drop_last,
@@ -56,7 +56,7 @@ def make_imagenet_tiny(
         persistent_workers=False)
     logger.info('ImageNet supervised train data loader created')
 
-    dataset = ImageNet(
+    test_dataset = ImageNet(
         root=root_path,
         image_folder=image_folder,
         transform=transform,
@@ -64,14 +64,14 @@ def make_imagenet_tiny(
         copy_data=copy_data,
         index_targets=False)
     if subset_file is not None:
-        dataset = ImageNetSubset(dataset, subset_file)
+        test_dataset = ImageNetSubset(test_dataset, subset_file)
     logger.info('ImageNet test dataset created')
     test_dist_sampler = torch.utils.data.distributed.DistributedSampler(
-        dataset=dataset,
+        dataset=test_dataset,
         num_replicas=world_size,
         rank=rank)
     test_loader = torch.utils.data.DataLoader(
-        dataset,
+        test_dataset,
         sampler=test_dist_sampler,
         batch_size=batch_size,
         drop_last=drop_last,
@@ -80,7 +80,7 @@ def make_imagenet_tiny(
         persistent_workers=False)
     logger.info('ImageNet supervised test data loader created')
 
-    return dataset, train_loader, test_loader
+    return train_dataset, train_loader, test_loader
 
 def make_imagenet1k(
     transform,
