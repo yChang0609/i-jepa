@@ -16,7 +16,7 @@ from src.utils.schedulers import (
     CosineWDSchedule)
 from src.utils.tensors import trunc_normal_
 
-from torchsummary import summary
+
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
