@@ -495,7 +495,7 @@ def vitc_large(patch_size=16, **kwargs):
 def vitc_huge(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformer(
-        patch_size=patch_size, embed_dim=1280, depth=31, num_heads=16, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=1280, depth=29, num_heads=16, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
