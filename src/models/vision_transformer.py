@@ -357,8 +357,6 @@ class VisionTransformer(nn.Module):
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim)
-        num_patches = self.patch_embed.num_patches
-
         try:
             if kwargs["use_conv_emb"] :
                 channels = kwargs["conv_channels"]
@@ -372,7 +370,8 @@ class VisionTransformer(nn.Module):
                     in_chans=in_chans)
         except:
             pass
-
+        
+        num_patches = self.patch_embed.num_patches
         # --
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim), requires_grad=False)
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1],
