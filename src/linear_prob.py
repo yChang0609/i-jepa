@@ -67,7 +67,11 @@ class LinearProbe(nn.Module):
                 param.requires_grad = False
 
         feature_dim = pre_train.patch_embed.num_patches * pre_train.embed_dim
-        self.linear = nn.Linear(feature_dim, num_classes)
+        
+        self.linear = nn.Sequential(
+            nn.Linear(feature_dim, num_classes),
+            nn.ReLU(),
+        )
 
     def forward(self, image):
         x = self.pre_train(image)
