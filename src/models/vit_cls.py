@@ -15,7 +15,7 @@ from src.masks.utils import apply_masks
 
 from math import log2
 
-from vision_transformer import (
+from .vision_transformer import (
     PatchEmbed,
     ConvEmbed,
     get_2d_sincos_pos_embed,
@@ -75,7 +75,7 @@ class VisionTransformerCLS(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches+1, embed_dim), requires_grad=False)
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1],
                                             int(self.patch_embed.num_patches**.5),
-                                            cls_token=False)
+                                            cls_token=True)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         # --
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -124,7 +124,7 @@ class VisionTransformerCLS(nn.Module):
         B, N, D = x.shape 
 
         # -- cls
-        cls_tokens = self.cls_token.repeat(B,1)
+        cls_tokens = self.cls_token.repeat(B,1,1)
         x = torch.cat((cls_tokens, x), dim=1)
 
         # -- add positional embedding to x

@@ -264,7 +264,7 @@ def main(args, resume_preempt=False):
                 csv_logger.log(epoch + 1, itr, loss, etime)
                 if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
                     logger.info('[%d, %5d] loss: %.3f '
-                                '[Accuracy:%.2f %]'
+                                '[Accuracy:%.2f %%]'
                                 '[mem: %.2e] '
                                 '(%.1f ms)'
                                 % (epoch + 1, itr,
