@@ -68,12 +68,12 @@ class LinearProbe(nn.Module):
 
         self.linear = nn.Sequential(
             nn.Linear(pre_train.embed_dim, num_classes),
-            nn.ReLU(),
+            # nn.ReLU(),
         )
 
     def forward(self, image):
         x = self.pre_train(image)
-        x = x.mean(dim = 1)ㄋ
+        x = x.mean(dim = 1)
         return self.linear(x)
 
 def main(args, resume_preempt=False):
