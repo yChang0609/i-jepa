@@ -37,12 +37,9 @@ from src.utils.logging import (
 from src.utils.tensors import repeat_interleave_batch
 from src.datasets.imagenet1k import make_imagenet_tiny
 
-from src.helper import (
-    load_encoder,
-    load_checkpoint,
-    init_model,
-    init_opt)
 from src.transforms import make_transforms
+
+from src.models import vit_cls 
 
 # --
 log_timings = True
@@ -58,21 +55,28 @@ torch.backends.cudnn.benchmark = True
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
-class LinearProbe(nn.Module):
-    def __init__(self, pre_train, num_classes, freeze = True):
-        super(LinearProbe, self).__init__()
-        self.pre_train = pre_train
-        if freeze:
-            for param in pre_train.parameters():
-                param.requires_grad = False
+def init_model(
+    device,
+    num_classes,
+    patch_size=16,
+    model_name='vit_base',
+    crop_size=224,
+    pred_depth=6,
+    pred_emb_dim=384,
+    conv_channels = [],
+    conv_strides = []
+):
+    vit_model = vit_cls.__dict__[model_name](
+        num_classes = num_classes,
+        img_size=[crop_size],
+        patch_size=patch_size,
+        conv_channels = conv_channels,
+        conv_strides = conv_strides)
 
-        feature_dim = pre_train.patch_embed.num_patches * pre_train.embed_dim
-        self.linear = nn.Linear(feature_dim, num_classes)
+    vit_model.to(device)
+    logger.info(vit_model)
 
-    def forward(self, image):
-        x = self.pre_train(image)
-        x = torch.flatten(x,1)
-        return self.linear(x)
+    return vit_model
 
 def main(args, resume_preempt=False):
 
@@ -161,7 +165,7 @@ def main(args, resume_preempt=False):
     latest_path = os.path.join(folder, f'{tag}-latest.pth.tar')
     load_path =  os.path.join(folder, r_file) if r_file is not None else latest_path
 
-    l_tag = "linear_probe"
+    l_tag = "vit"
     l_log_file = os.path.join(folder, f'{l_tag}_r{rank}.csv')
     l_save_path = os.path.join(folder, f'{l_tag}' + '-ep{epoch}.pth.tar')
     l_latest_path = os.path.join(folder, f'{l_tag}-latest.pth.tar')
@@ -172,27 +176,6 @@ def main(args, resume_preempt=False):
                            ('%d', 'itr'),
                            ('%.5f', 'loss'),
                            ('%d', 'time (ms)'))
-
-    # -- init model
-    encoder, predictor = init_model(
-        device=device,
-        patch_size=patch_size,
-        crop_size=crop_size,
-        pred_depth=pred_depth,
-        pred_emb_dim=pred_emb_dim,
-        model_name=model_name,
-        conv_channels = conv_channels,
-        conv_strides = conv_strides)
-    target_encoder = copy.deepcopy(encoder)
-
-    encoder, _ = load_encoder(
-        device=device,
-        r_path=load_path,
-        encoder=encoder)
-    
-    del predictor
-    del target_encoder
-    torch.cuda.empty_cache() 
 
     transform = make_transforms(
         crop_size=crop_size,
@@ -215,14 +198,25 @@ def main(args, resume_preempt=False):
             copy_data=copy_data,
             drop_last=True)
     
-    linear_probe = LinearProbe(encoder, len(dataset_imgnet.classes), freeze = True)
-    optimizer = torch.optim.AdamW(linear_probe.parameters())
+    # -- init model
+    vit = init_model(
+        device=device,
+        num_classes= len(dataset_imgnet.classes),
+        patch_size=patch_size,
+        crop_size=crop_size,
+        pred_depth=pred_depth,
+        pred_emb_dim=pred_emb_dim,
+        model_name=model_name,
+        conv_channels = conv_channels,
+        conv_strides = conv_strides)
+
+    optimizer = torch.optim.AdamW(vit.parameters())
     criterion = nn.CrossEntropyLoss()
-    linear_probe.to(device)
+    vit.to(device)
     
     def save_checkpoint(epoch):
         save_dict = {
-            'linear_probe':linear_probe.state_dict(),
+            'vit':vit.state_dict(),
             'opt': optimizer.state_dict(),
             'epoch': epoch,
             'loss': loss_meter.avg,
@@ -247,11 +241,11 @@ def main(args, resume_preempt=False):
 
             def train_step():
                 optimizer.zero_grad()
-                outputs = linear_probe(imgs)
+                outputs = vit(imgs)
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-                grad_stats = grad_logger(linear_probe.named_parameters())
+                grad_stats = grad_logger(vit.named_parameters())
 
                 correct = 0
                 total = 0
@@ -295,13 +289,13 @@ def main(args, resume_preempt=False):
         logger.info('avg. loss %.3f' % loss_meter.avg)
         save_checkpoint(epoch+1)
 
-    linear_probe.eval()
+    vit.eval()
     correct = 0
     total = 0
     with torch.no_grad():
         for imgs, labels in test_loader:
             imgs, labels = imgs.to(device), labels.to(device)
-            outputs = linear_probe(imgs)
+            outputs = vit(imgs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()

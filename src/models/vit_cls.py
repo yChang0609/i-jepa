@@ -75,7 +75,7 @@ class VisionTransformerCLS(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches+1, embed_dim), requires_grad=False)
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1],
                                             int(self.patch_embed.num_patches**.5),
-                                            cls_token=True)
+                                            cls_token=False)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         # --
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
