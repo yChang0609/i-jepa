@@ -66,16 +66,14 @@ class LinearProbe(nn.Module):
             for param in pre_train.parameters():
                 param.requires_grad = False
 
-        feature_dim = pre_train.patch_embed.num_patches * pre_train.embed_dim
-        
         self.linear = nn.Sequential(
-            nn.Linear(feature_dim, num_classes),
+            nn.Linear(pre_train.embed_dim, num_classes),
             nn.ReLU(),
         )
 
     def forward(self, image):
         x = self.pre_train(image)
-        x = torch.flatten(x,1)
+        x = x.mean(dim = 1)ㄋ
         return self.linear(x)
 
 def main(args, resume_preempt=False):
