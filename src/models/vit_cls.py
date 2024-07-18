@@ -56,6 +56,7 @@ class VisionTransformerCLS(nn.Module):
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim)
+        self.depth = depth
         try:
             if kwargs["use_conv_emb"] :
                 channels = kwargs["conv_channels"]
@@ -67,6 +68,8 @@ class VisionTransformerCLS(nn.Module):
                     strides = strides,
                     img_size=img_size[0],
                     in_chans=in_chans)
+                num_conv_lary =len(channels)+1
+                self.depth = depth - (num_conv_lary//5)
         except:
             pass
         
@@ -78,12 +81,12 @@ class VisionTransformerCLS(nn.Module):
                                             cls_token=True)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         # --
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, self.depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
-            for i in range(depth)])
+            for i in range(self.depth)])
         self.norm = norm_layer(embed_dim)
         # ------
         self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
@@ -163,10 +166,17 @@ class VisionTransformerCLS(nn.Module):
         return torch.cat((class_emb.unsqueeze(0), pos_embed), dim=1)
 
 # -- ViTC
+def vitc_sd(patch_size=16, **kwargs):
+    use_conv_emb = True
+    model = VisionTransformerCLS(
+        patch_size=patch_size, embed_dim=192, depth=9, num_heads=12, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
+    return model
+
 def vitc_tiny(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformerCLS(
-        patch_size=patch_size, embed_dim=192, depth=11, num_heads=3, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
@@ -174,7 +184,7 @@ def vitc_tiny(patch_size=16, **kwargs):
 def vitc_small(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformerCLS(
-        patch_size=patch_size, embed_dim=384, depth=11, num_heads=6, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
@@ -182,7 +192,7 @@ def vitc_small(patch_size=16, **kwargs):
 def vitc_base(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformerCLS(
-        patch_size=patch_size, embed_dim=768, depth=11, num_heads=12, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
@@ -190,7 +200,7 @@ def vitc_base(patch_size=16, **kwargs):
 def vitc_large(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformerCLS(
-        patch_size=patch_size, embed_dim=1024, depth=23, num_heads=16, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
@@ -198,7 +208,7 @@ def vitc_large(patch_size=16, **kwargs):
 def vitc_huge(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformerCLS(
-        patch_size=patch_size, embed_dim=1280, depth=31, num_heads=16, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=1280, depth=32, num_heads=16, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
@@ -206,11 +216,17 @@ def vitc_huge(patch_size=16, **kwargs):
 def vitc_giant(patch_size=16, **kwargs):
     use_conv_emb = True
     model = VisionTransformerCLS(
-        patch_size=patch_size, embed_dim=1408, depth=39, num_heads=16, mlp_ratio=48/11,
+        patch_size=patch_size, embed_dim=1408, depth=40, num_heads=16, mlp_ratio=48/11,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),use_conv_emb = use_conv_emb, **kwargs)
     return model
 
 # -- ViT
+def vit_sd(patch_size=16, **kwargs):
+    model = VisionTransformerCLS(
+        patch_size=patch_size, embed_dim=192, depth=9, num_heads=12, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
 def vit_tiny(patch_size=16, **kwargs):
     model = VisionTransformerCLS(
         patch_size=patch_size, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4,

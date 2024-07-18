@@ -153,7 +153,7 @@ class ImageNet(torchvision.datasets.ImageFolder):
         :param index_targets: whether to index the id of each labeled image
         """
 
-        suffix = 'train/' if train else 'val/'
+        suffix = 'train/' if train else 'organized_val/'
         data_path = None
         if copy_data:
             logger.info('copying data locally')

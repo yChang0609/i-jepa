@@ -55,6 +55,15 @@ torch.backends.cudnn.benchmark = True
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
+def compute_accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k"""
+    maxk = min(max(topk), output.size()[1])
+    batch_size = target.size(0)
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+    return [correct[:min(k, maxk)].reshape(-1).float().sum(0) * 100. / batch_size for k in topk]
+
 def init_model(
     device,
     num_classes,
@@ -169,13 +178,23 @@ def main(args, resume_preempt=False):
     l_log_file = os.path.join(folder, f'{l_tag}_r{rank}.csv')
     l_save_path = os.path.join(folder, f'{l_tag}' + '-ep{epoch}.pth.tar')
     l_latest_path = os.path.join(folder, f'{l_tag}-latest.pth.tar')
+    l_out_acc = os.path.join(folder, f'{l_tag}_r{rank}.txt')
+    l_test_acc_file = os.path.join(folder, f'{l_tag}_test_acc_r{rank}.csv')
 
     # -- make csv_logger
     csv_logger = CSVLogger(l_log_file,
                            ('%d', 'epoch'),
                            ('%d', 'itr'),
                            ('%.5f', 'loss'),
+                           ('%.5f', 'acc_1'),
+                           ('%.5f', 'acc_5'),
+                           ('%.2e', 'mem'),
                            ('%d', 'time (ms)'))
+    
+    acc_logger = CSVLogger(l_test_acc_file,
+                        ('%d', 'epoch'),
+                        ('%.5f', 'acc_1'),
+                        ('%.5f', 'acc_5'))
 
     transform = make_transforms(
         crop_size=crop_size,
@@ -186,7 +205,7 @@ def main(args, resume_preempt=False):
         color_jitter=color_jitter)
 
     # -- init data-loaders/samplers
-    dataset_imgnet, train_loader, test_loader = make_imagenet_tiny(
+    dataset_imgnet, train_loader, val_loader = make_imagenet_tiny(
             transform=transform,
             batch_size=batch_size,
             pin_mem=pin_mem,
@@ -227,13 +246,15 @@ def main(args, resume_preempt=False):
                 torch.save(save_dict, l_save_path.format(epoch=f'{epoch + 1}'))
 
     start_epoch = 0
-    num_epochs = 50
+    # num_epochs = 40
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
         logger.info('Epoch %d' % (epoch + 1))
 
         loss_meter = AverageMeter()
         time_meter = AverageMeter()
+        acc1_meter = AverageMeter()
+        acc5_meter = AverageMeter()
 
         for itr, udata in enumerate(train_loader):
             imgs, labels = udata
@@ -246,31 +267,30 @@ def main(args, resume_preempt=False):
                 loss.backward()
                 optimizer.step()
                 grad_stats = grad_logger(vit.named_parameters())
-
-                correct = 0
-                total = 0
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-                accuracy = 100 * correct / total
-                return (float(loss), accuracy, grad_stats)
+                acc1, acc5 = compute_accuracy(outputs, labels, topk=(1, 5))
+                return (float(loss), acc1, acc5, grad_stats)
             
-            (loss, accuracy, grad_stats), etime = gpu_timer(train_step)
+            (loss, acc1, acc5, grad_stats), etime = gpu_timer(train_step)
             loss_meter.update(loss)
             time_meter.update(etime)
+            acc1_meter.update(acc1)
+            acc5_meter.update(acc5)
 
             # -- Logging
             def log_stats():
-                csv_logger.log(epoch + 1, itr, loss, etime)
+                mem = torch.cuda.max_memory_allocated() / 1024.**2
+                csv_logger.log(epoch + 1, itr, loss, acc1, acc5, mem, etime)
                 if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
                     logger.info('[%d, %5d] loss: %.3f '
-                                '[Accuracy:%.2f %%]'
+                                '[Accuracy Top-1:%.2f %%]'
+                                '[Accuracy Top-5:%.2f %%]'
                                 '[mem: %.2e] '
                                 '(%.1f ms)'
                                 % (epoch + 1, itr,
                                    loss_meter.avg,
-                                   accuracy,
-                                   torch.cuda.max_memory_allocated() / 1024.**2,
+                                   acc1_meter.avg,
+                                   acc5_meter.avg,
+                                   mem,
                                    time_meter.avg))
 
                     if grad_stats is not None:
@@ -284,23 +304,24 @@ def main(args, resume_preempt=False):
             log_stats()
 
             assert not np.isnan(loss), 'loss is nan'
+        vit.eval()
+        test_acc1_meter = AverageMeter()
+        test_acc5_meter = AverageMeter()
+        with torch.no_grad():
+            for imgs, labels in val_loader:
+                imgs, labels = imgs.to(device), labels.to(device)
+                outputs = vit(imgs)
+                acc1, acc5 = compute_accuracy(outputs, labels, topk=(1, 5))
+                test_acc1_meter.update(acc1)
+                test_acc5_meter.update(acc5)
+            
+        vit.train()
+        acc_logger.log(epoch+1, test_acc1_meter.avg, test_acc5_meter.avg)
+        logger.info(f'Test set Accuracy[top-1/top-5]: {test_acc1_meter.avg}% / {test_acc5_meter.avg}%')
 
         # -- Save Checkpoint after every epoch
         logger.info('avg. loss %.3f' % loss_meter.avg)
         save_checkpoint(epoch+1)
-
-    vit.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for imgs, labels in test_loader:
-            imgs, labels = imgs.to(device), labels.to(device)
-            outputs = vit(imgs)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-
-    print(f'Accuracy: {100 * correct / total:.2f}%')
 
 if __name__ == "__main__":
     main()
