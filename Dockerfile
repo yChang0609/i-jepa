@@ -31,5 +31,7 @@ WORKDIR /workspace
 # 拷貝當前目錄的內容到工作目錄
 COPY . /workspace
 
+RUN chmod +x ./run_script.sh
+
 # 設置容器啟動時的默認命令（可根據實際需要調整）
-CMD ["bash"]
+CMD ["./run_script.sh"]
