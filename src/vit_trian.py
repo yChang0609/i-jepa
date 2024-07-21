@@ -87,7 +87,7 @@ def init_model(
 
     return vit_model
 
-def main(args, resume_preempt=False):
+def main(args, docker_mount_path, resume_preempt=False):
 
     # ----------------------------------------------------------------------- #
     #  PASSED IN PARAMS FROM CONFIG FILE
@@ -150,6 +150,7 @@ def main(args, resume_preempt=False):
     # -- LOGGING
     folder = args['logging']['folder']
     tag = args['logging']['write_tag']
+    folder =  os.path.join(folder, docker_mount_path)
     
     if not os.path.exists(folder):
         os.makedirs(folder)

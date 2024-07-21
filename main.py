@@ -28,7 +28,7 @@ parser.add_argument(
 def process_main(rank, fname, world_size, devices):
     import os
     os.environ['CUDA_VISIBLE_DEVICES'] = str(devices[rank].split(':')[-1])
-
+    mount_path_env = os.getenv('MOUNT_PATH', "./")
     import logging
     logging.basicConfig()
     logger = logging.getLogger()
@@ -49,7 +49,7 @@ def process_main(rank, fname, world_size, devices):
 
     world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
     logger.info(f'Running... (rank: {rank}/{world_size})')
-    app_main(args=params)
+    app_main(args=params, docker_mount_path=mount_path_env)
 
 
 if __name__ == '__main__':

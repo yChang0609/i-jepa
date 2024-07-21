@@ -64,7 +64,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
 
-def main(args, resume_preempt=False):
+def main(args, docker_mount_path, resume_preempt=False):
 
     # ----------------------------------------------------------------------- #
     #  PASSED IN PARAMS FROM CONFIG FILE
@@ -127,6 +127,7 @@ def main(args, resume_preempt=False):
     # -- LOGGING
     folder = args['logging']['folder']
     tag = args['logging']['write_tag']
+    folder =  os.path.join(folder, docker_mount_path)
     
     if not os.path.exists(folder):
         os.makedirs(folder)
@@ -162,6 +163,7 @@ def main(args, resume_preempt=False):
                            ('%.5f', 'loss'),
                            ('%.5f', 'mask-A'),
                            ('%.5f', 'mask-B'),
+                           ('%.2e', 'mem'),
                            ('%d', 'time (ms)'))
 
     # -- init model
@@ -350,7 +352,8 @@ def main(args, resume_preempt=False):
 
             # -- Logging
             def log_stats():
-                csv_logger.log(epoch + 1, itr, loss, maskA_meter.val, maskB_meter.val, etime)
+                mem = torch.cuda.max_memory_allocated() / 1024.**2
+                csv_logger.log(epoch + 1, itr, loss, maskA_meter.val, maskB_meter.val, mem, etime)
                 if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
                     logger.info('[%d, %5d] loss: %.3f '
                                 'masks: %.1f %.1f '
@@ -363,7 +366,7 @@ def main(args, resume_preempt=False):
                                    maskB_meter.avg,
                                    _new_wd,
                                    _new_lr,
-                                   torch.cuda.max_memory_allocated() / 1024.**2,
+                                   mem,
                                    time_meter.avg))
 
                     if grad_stats is not None:
