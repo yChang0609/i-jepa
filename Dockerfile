@@ -3,6 +3,7 @@
 
 # Using Ubuntu 22.04
 FROM ubuntu:22.04
+# FROM nvidia/cuda:11.3.1-cudnn8-runtime-ubuntu20.04
 
 # Env setting non-interactive
 ENV DEBIAN_FRONTEND=noninteractive
@@ -12,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     python3.10 \
     python3.10-dev \
     python3-pip \
+    jq \
     && apt-get clean 
 
 RUN pip install yq
@@ -19,11 +21,10 @@ RUN pip install yq
 # setting default python version 3.10
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 
-# install requirements python toolkits
-RUN python3 -m pip install -r requirements.txt
-
 # install pytorch
 RUN pip3 install --no-cache-dir torch torchvision torchaudio
+
+RUN mkdir -p /mount/nfs
 
 # 設置工作目錄
 WORKDIR /workspace

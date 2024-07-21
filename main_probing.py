@@ -29,7 +29,8 @@ def process_main(rank, fname, world_size, devices):
     yaml_flie = f'{fname}/params-ijepa.yaml'
     import os
     os.environ['CUDA_VISIBLE_DEVICES'] = str(devices[rank].split(':')[-1])
-
+    mount_path_env = os.getenv('MOUNT_PATH', "./")
+    
     import logging
     logging.basicConfig()
     logger = logging.getLogger()

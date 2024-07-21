@@ -1,14 +1,18 @@
 #!/bin/bash
-DIRECTORY="$MOUNT_PATH/experiment"
-
+DIRECTORY="$MOUNT_PATH/experiments"
+echo "Script start"
+nvidia-smi
 for file in "$DIRECTORY"/*
 do
     if [ -f "$file" ]; then
-        if ["$file" == *.yaml];then
-            logfolder=$(yq e '.logging.folder' config.yaml)
-            python3 main_vit.py --fname "$DIRECTORY/$file" --devices cuda:0  
-            python3 main.py --fname "$DIRECTORY/$file" --devices cuda:0
-            python3 main_probing.py --fname "$DIRECTORY/$logfolder" --devices cuda:0
-        fi
+        echo "run config:$file"
+        logfolder=$(yq .logging.folder $file)
+        echo "Training vit classification"
+        python3 main_vit.py --fname "$file" --devices cuda:0  
+        echo "Training I-JEPA"
+        python3 main.py --fname "$file" --devices cuda:0
+        echo "Evaluate I-JEPA"
+        python3 main_probing.py --fname $MOUNT_PATH/${logfolder//\"/} --devices cuda:0
     fi
 done
+echo "Script end"

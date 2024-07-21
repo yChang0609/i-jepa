@@ -2,3 +2,6 @@ configs/*
 *.md
 LICENSE
 dataset/*
+logs/*
+__pycache__
+.DS_Store

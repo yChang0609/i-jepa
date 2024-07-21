@@ -88,6 +88,7 @@ def init_model(
     return vit_model
 
 def main(args, docker_mount_path, resume_preempt=False):
+    print( "torch.cuda.is_available():",torch.cuda.is_available() )
 
     # ----------------------------------------------------------------------- #
     #  PASSED IN PARAMS FROM CONFIG FILE
