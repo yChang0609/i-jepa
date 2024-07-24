@@ -1,6 +1,6 @@
 train_type:
-  vit_cls: false
-  jepa_cls: false
+  vit_cls: true
+  jepa_cls: true
 data:
   batch_size: 64
   color_jitter_strength: 0.0

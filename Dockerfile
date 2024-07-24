@@ -36,5 +36,8 @@ COPY . /workspace
 
 RUN chmod +x ./run_script.sh
 
+# Version
+ENV _VERSION=1.01
+
 # 設置容器啟動時的默認命令（可根據實際需要調整）
 CMD ["./run_script.sh"]
