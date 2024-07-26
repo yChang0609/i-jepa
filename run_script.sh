@@ -11,13 +11,20 @@ fi
 
 if $TRAIN_IN_TINY; then
     if [ -d "$DATASET_DIR/tiny-imagenet-200" ]; then
-        python3 org_dataset.py --path $DATASET_DIR/tiny-imagenet-200/val
+        python3 ./imagenet_handle/org_dataset.py --path $DATASET_DIR/tiny-imagenet-200/val
     else
         echo "not find folder: $DATASET_DIR/tiny-imagenet-200"
         exit 999
     fi
 elif $TRAIN_IN_1K; then
-    exit 999
+    if [ -d "$DATASET_DIR/imagenet-1k" ]; then
+        echo "Handle ImageNet-1k"
+        ./imagenet_handle/unzip.sh
+        python3 ./imagenet_handle/unpack2.py --base_path $DATASET_DIR --target_path imagenet-1k-class
+    else
+        echo "not find folder: $DATASET_DIR/imagenet-1k"
+        exit 999
+    fi
 else
     echo "Not use ImageNet-1k or tiny"
     exit 999
