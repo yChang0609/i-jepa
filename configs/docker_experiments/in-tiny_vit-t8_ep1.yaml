@@ -2,7 +2,7 @@ train_type:
   vit_cls: true
   jepa_cls: true
 data:
-  batch_size: 64
+  batch_size: 512
   color_jitter_strength: 0.0
   crop_scale:
   - 0.1
