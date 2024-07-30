@@ -25,19 +25,16 @@ RUN pip install yq
 # setting default python version 3.10
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 
-# # install pytorch
-# RUN pip3 install --no-cache-dir torch torchvision torchaudio
 
-# 設置工作目錄
 WORKDIR /workspace
 
-# 拷貝當前目錄的內容到工作目錄
 COPY . /workspace
 
+RUN chmod +x ./run_script-tpe1.sh
 RUN chmod +x ./run_script.sh
 
 # Version
-ENV _VERSION=1.02
+ENV _VERSION=1.05
 
-# 設置容器啟動時的默認命令（可根據實際需要調整）
-CMD ["./run_script.sh"]
+CMD ["/bin/bash"]
+#CMD ["./run_script.sh"]

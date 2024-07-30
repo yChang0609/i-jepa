@@ -11,7 +11,7 @@ else
     do
         if [ -f "$file" ]; then
             echo "Extracting $file..."
-            tar -xzf "$file" -C "$DIR/imagenet_train/"
+            tar -xzf "$file" -C "$DIR/imagenet_train/" --no-same-owner
         else
             echo "No .tar.gz files found in $DIR."
         fi
@@ -23,6 +23,6 @@ if [ -d "$DIR/imagenet_val/" ];then
 else
     mkdir -p "$DIR/imagenet_val/"
     echo "Extracting val_images.tar.gz..."
-    tar -xzf "$DIR/val_images.tar.gz" -C "$DIR/imagenet_val/"
+    tar -xzf "$DIR/val_images.tar.gz" -C "$DIR/imagenet_val/" --no-same-owner
 fi
 echo "Unzip end"
