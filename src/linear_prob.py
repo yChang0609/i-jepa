@@ -87,7 +87,7 @@ class LinearProbe(nn.Module):
         x = x.mean(dim = 1)
         return self.linear(x)
 
-def main(args, docker_mount_path, resume_preempt=False):
+def main(args, mount_path, resume_preempt=False):
 
     # ----------------------------------------------------------------------- #
     #  PASSED IN PARAMS FROM CONFIG FILE
@@ -123,7 +123,7 @@ def main(args, docker_mount_path, resume_preempt=False):
     image_folder = args['data']['image_folder']
     crop_size = args['data']['crop_size']
     crop_scale = args['data']['crop_scale']
-    root_path =  os.path.join(docker_mount_path, root_path)
+    root_path =  os.path.join(mount_path, root_path)
     # --
 
     # -- MASK
@@ -151,7 +151,7 @@ def main(args, docker_mount_path, resume_preempt=False):
     # -- LOGGING
     folder = args['logging']['folder']
     tag = args['logging']['write_tag']
-    folder =  os.path.join(docker_mount_path, folder)
+    folder =  os.path.join(mount_path, folder)
     
     if not os.path.exists(folder):
         os.makedirs(folder)
