@@ -34,7 +34,7 @@ RUN chmod +x ./run_script-tpe1.sh
 RUN chmod +x ./run_script.sh
 
 # Version
-ENV _VERSION=1.05
+ENV _VERSION=1.06
 
 CMD ["/bin/bash"]
 #CMD ["./run_script.sh"]
