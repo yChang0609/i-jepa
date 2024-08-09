@@ -46,6 +46,7 @@ from src.transforms import make_transforms
 from src.models.categorical_vae import CategoricalVAE
 from src.models.vision_transformer import VisionTransformer
 from einops import rearrange, repeat, reduce
+from PIL import Image
 
 # --
 log_timings = True
@@ -71,14 +72,14 @@ def compute_accuracy(output, target, topk=(1,)):
     return [correct[:min(k, maxk)].reshape(-1).float().sum(0) * 100. / batch_size for k in topk]
 
 
-class JEPA_base_VAE(nn.Module):
-    def init(self, pre_train:VisionTransformer, freeze = True):
-        super(JEPA_base_VAE, self).__init__()
+class JEPAbaseVAE(nn.Module):
+    def __init__(self, pre_train:VisionTransformer, use_amp, freeze = True):
+        super(JEPAbaseVAE, self).__init__()
         self.jepa = pre_train
         if freeze:
             for param in self.jepa.parameters():
                 param.requires_grad = False
-        self.vae = CategoricalVAE(self.jepa.embed_dim, self.jepa.embed_dim)
+        self.vae = CategoricalVAE(self.jepa.embed_dim, self.jepa.embed_dim, use_amp)
 
     def load_model(self, r_path):
         try:
@@ -101,9 +102,10 @@ class JEPA_base_VAE(nn.Module):
         return epoch
 
 class EmbDecoder(nn.Module):
-    def init(self, emb_channel, in_size):
+    def __init__(self, emb_channel, in_size):
+        super().__init__()
         backbone = []
-        channels = emb_channel # 192 
+        channels = emb_channel 
         feat_width = 4
         original_in_channels = 3
         szie = in_size
@@ -137,8 +139,9 @@ class EmbDecoder(nn.Module):
         )
         self.backbone = nn.Sequential(*backbone)
 
-    def forward(self, sample):
-        obs_hat = self.backbone(sample)
+    def forward(self, x):
+        x = rearrange(x, "B (H W) C  -> B C H W",H=8)
+        obs_hat = self.backbone(x)
         return obs_hat
 
 
@@ -276,7 +279,7 @@ def main(args, mount_path, resume_preempt=False):
         color_jitter=color_jitter)
 
     # -- init data-loaders/samplers
-    _, unsupervised_loader, unsupervised_sampler = make_imagenet1k(
+    dataset, unsupervised_loader, unsupervised_sampler = make_imagenet1k(
             transform=transform,
             batch_size=batch_size,
             pin_mem=pin_mem,
@@ -290,16 +293,19 @@ def main(args, mount_path, resume_preempt=False):
             drop_last=True)
     ipe = len(unsupervised_loader)
     
-    jepa_vae = JEPA_base_VAE(encoder)
+    jepa_vae = JEPAbaseVAE(encoder, use_amp=use_bfloat16)
     optimizer = torch.optim.AdamW(jepa_vae.vae.parameters())
     criterion = nn.MSELoss()
     jepa_vae.jepa.to(device)
     jepa_vae.vae.to(device)
 
-    emb_decoder = EmbDecoder(encoder.emb_dim, 8)
-    visual_optimizer = torch.optim.AdamW(emb_decoder.vae.parameters())
+    emb_decoder = EmbDecoder(encoder.embed_dim, 8)
+    visual_optimizer = torch.optim.AdamW(emb_decoder.parameters())
     visual_criterion = nn.MSELoss()
     emb_decoder.to(device)
+
+    logger.info(jepa_vae)
+    logger.info(emb_decoder)
     
     def save_checkpoint(epoch):
         save_dict = {
@@ -316,6 +322,7 @@ def main(args, mount_path, resume_preempt=False):
     start_epoch = 0
     # num_epochs = 40
     # -- TRAINING LOOP
+    import matplotlib.pyplot as plt
     for epoch in range(start_epoch, num_epochs):
         logger.info('Epoch %d' % (epoch + 1))
 
@@ -324,6 +331,7 @@ def main(args, mount_path, resume_preempt=False):
 
         visual_loss_meter = AverageMeter()
         visual_time_meter = AverageMeter()
+        
 
         for itr, udata in enumerate(unsupervised_loader):
             imgs, labels = udata
@@ -367,7 +375,7 @@ def main(args, mount_path, resume_preempt=False):
                     loss, mem, etime,
                     visual_loss, visual_etime)
                 if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
-                    logger.info('[%d, %5d] loss: %.3f '
+                    logger.info('[%d, %5d] VAE loss: %.3f '
                                 '[mem: %.2e] '
                                 '(%.1f ms)'
                                 % (epoch + 1, itr,
@@ -380,8 +388,40 @@ def main(args, mount_path, resume_preempt=False):
                                    visual_loss_meter.avg,
                                    visual_time_meter.avg))
             log_stats()
-
             assert not np.isnan(loss), 'loss is nan'
+
+        with torch.no_grad():
+            def tensor2pil(tensor):
+                mean = [0.485, 0.456, 0.406]
+                std = [0.229, 0.224, 0.225]
+                images = tensor * torch.tensor(std).view(3, 1, 1) + torch.tensor(mean).view(3, 1, 1)
+                image = images.permute(1, 2, 0).numpy()
+                image_np = (image * 255).astype(np.uint8)
+                return Image.fromarray(image_np)
+
+            for images, _ in unsupervised_loader:
+                idx = torch.randint(0, images.size(0), (1,)).item()  # 隨機選擇索引
+                random_images = images.to(device)
+                emb = jepa_vae.jepa(random_images)
+                _, sample = jepa_vae.vae.encode(emb)
+                hat_emb = jepa_vae.vae.decode(sample)
+                hat_jepa_images = emb_decoder(emb)
+                hat_vae_images = emb_decoder(hat_emb)
+                
+                random_image_np = random_images[idx].cpu()
+                hat_jepa_image_np = hat_jepa_images[idx].cpu()
+                hat_vae_image_np = hat_vae_images[idx].cpu()
+
+                image_save_path = os.path.join(folder, f'vae_{epoch+1}-image')
+                os.mkdir(image_save_path)
+                image = tensor2pil(random_image_np)
+                image.save(image_save_path+'/orig_imag.png')
+                image = tensor2pil(hat_jepa_image_np)
+                image.save(image_save_path+'/hat_jepa_image.png')
+                image = tensor2pil(hat_vae_image_np)
+                image.save(image_save_path+'/hat_vae_image.png')
+                break    
+            
         
         # -- Save Checkpoint after every epoch
         logger.info('avg. loss %.3f' % loss_meter.avg)

@@ -11,11 +11,13 @@
 # python3 main_probing.py --fname logs/tiny/in-tiny_vitc-t8_ep100-v2/ --devices cuda:0 
 
 export TRAIN_IN_TINY=true
-export MOUNT_PATH=/path/to/folder
+export MOUNT_PATH=/home/chage/Documents/mount/
 #export SPECIFIED_CONFIG=config_name
 
-./run_script.sh
+python3 main_vae.py --fname $MOUNT_PATH/logs/vae_pre_train/in-tiny_vit-t8_ep300/ --devices cuda:0
+# ./run_script.sh
 
 #unset SPECIFIED_CONFIG
 unset TRAIN_IN_TINY
 unset MOUNT_PATH
+

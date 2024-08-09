@@ -13,7 +13,7 @@ import pprint
 import yaml
 
 from src.utils.distributed import init_distributed
-from src.linear_prob import main as linear_prob_main
+from src.jepa_vae import main as vae_main
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -51,7 +51,7 @@ def process_main(rank, fname, world_size, devices):
 
     world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
     logger.info(f'Running... (rank: {rank}/{world_size})')
-    linear_prob_main(args=params, mount_path=mount_path_env)
+    vae_main(args=params, mount_path=mount_path_env)
 
 
 if __name__ == '__main__':

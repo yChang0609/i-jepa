@@ -111,15 +111,25 @@ def make_imagenet1k(
         dataset=dataset,
         num_replicas=world_size,
         rank=rank)
-    data_loader = torch.utils.data.DataLoader(
-        dataset,
-        collate_fn=collator,
-        sampler=dist_sampler,
-        batch_size=batch_size,
-        drop_last=drop_last,
-        pin_memory=pin_mem,
-        num_workers=num_workers,
-        persistent_workers=False)
+    if collator == None:
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            sampler=dist_sampler,
+            batch_size=batch_size,
+            drop_last=drop_last,
+            pin_memory=pin_mem,
+            num_workers=num_workers,
+            persistent_workers=False)
+    else:
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            collate_fn=collator,
+            sampler=dist_sampler,
+            batch_size=batch_size,
+            drop_last=drop_last,
+            pin_memory=pin_mem,
+            num_workers=num_workers,
+            persistent_workers=False)
     logger.info('ImageNet unsupervised data loader created')
 
     return dataset, data_loader, dist_sampler
