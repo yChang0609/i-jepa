@@ -19,6 +19,68 @@ import torchvision
 _GLOBAL_SEED = 0
 logger = getLogger()
 
+def make_imagenet_tiny(
+    transform,
+    batch_size,
+    pin_mem=True,
+    num_workers=8,
+    world_size=1,
+    rank=0,
+    root_path=None,
+    image_folder=None,
+    copy_data=False,
+    drop_last=True,
+    subset_file=None
+):
+    train_dataset = ImageNet(
+        root=root_path,
+        image_folder=image_folder,
+        transform=transform,
+        train=True,
+        copy_data=copy_data,
+        index_targets=False)
+    if subset_file is not None:
+        train_dataset = ImageNetSubset(train_dataset, subset_file)
+    logger.info('ImageNet train dataset created')
+    train_dist_sampler = torch.utils.data.distributed.DistributedSampler(
+        dataset=train_dataset,
+        num_replicas=world_size,
+        rank=rank)
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        sampler=train_dist_sampler,
+        batch_size=batch_size,
+        drop_last=drop_last,
+        pin_memory=pin_mem,
+        num_workers=num_workers,
+        persistent_workers=False)
+    logger.info('ImageNet supervised train data loader created')
+
+    test_dataset = ImageNet(
+        root=root_path,
+        image_folder=image_folder,
+        transform=transform,
+        train=False,
+        copy_data=copy_data,
+        index_targets=False)
+    if subset_file is not None:
+        test_dataset = ImageNetSubset(test_dataset, subset_file)
+    logger.info('ImageNet test dataset created')
+    test_dist_sampler = torch.utils.data.distributed.DistributedSampler(
+        dataset=test_dataset,
+        num_replicas=world_size,
+        rank=rank)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        sampler=test_dist_sampler,
+        batch_size=batch_size,
+        drop_last=drop_last,
+        pin_memory=pin_mem,
+        num_workers=num_workers,
+        persistent_workers=False)
+    logger.info('ImageNet supervised test data loader created')
+
+    return train_dataset, train_loader, test_loader
 
 def make_imagenet1k(
     transform,
@@ -91,7 +153,7 @@ class ImageNet(torchvision.datasets.ImageFolder):
         :param index_targets: whether to index the id of each labeled image
         """
 
-        suffix = 'train/' if train else 'val/'
+        suffix = 'train/' if train else 'organized_val/'
         data_path = None
         if copy_data:
             logger.info('copying data locally')

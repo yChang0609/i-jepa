@@ -13,7 +13,7 @@ data:
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: logs/in-tiny_vitc_large-8_ep20/
+  folder: logs/in-tiny_vit_huge-8_ep20/
   write_tag: jepa
 mask:
   allow_overlap: false
@@ -33,7 +33,7 @@ mask:
 meta:
   copy_data: false
   load_checkpoint: false
-  model_name: vitc_large
+  model_name: vit_huge
   conv_channels:
   - 64
   - 128
@@ -46,7 +46,7 @@ meta:
   - 2
   - 1
   # - 1
-
+  
   pred_depth: 12
   pred_emb_dim: 384
   read_checkpoint: null

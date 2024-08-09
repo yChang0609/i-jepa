@@ -13,12 +13,12 @@ import pprint
 import yaml
 
 from src.utils.distributed import init_distributed
-from src.train import main as app_main
+from src.linear_prob import main as linear_prob_main
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
     '--fname', type=str,
-    help='name of config file to load',
+    help='name of logs floder to load',
     default='configs.yaml')
 parser.add_argument(
     '--devices', type=str, nargs='+', default=['cuda:0'],
@@ -26,9 +26,11 @@ parser.add_argument(
 
 
 def process_main(rank, fname, world_size, devices):
+    yaml_flie = f'{fname}/params-ijepa.yaml'
     import os
     os.environ['CUDA_VISIBLE_DEVICES'] = str(devices[rank].split(':')[-1])
     mount_path_env = os.getenv('MOUNT_PATH', "./")
+    
     import logging
     logging.basicConfig()
     logger = logging.getLogger()
@@ -37,11 +39,11 @@ def process_main(rank, fname, world_size, devices):
     else:
         logger.setLevel(logging.ERROR)
 
-    logger.info(f'called-params {fname}')
+    logger.info(f'called-params {yaml_flie}')
 
     # -- load script params
     params = None
-    with open(fname, 'r') as y_file:
+    with open(yaml_flie, 'r') as y_file:
         params = yaml.load(y_file, Loader=yaml.FullLoader)
         logger.info('loaded params...')
         pp = pprint.PrettyPrinter(indent=4)
@@ -49,7 +51,7 @@ def process_main(rank, fname, world_size, devices):
 
     world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
     logger.info(f'Running... (rank: {rank}/{world_size})')
-    app_main(args=params, mount_path=mount_path_env)
+    linear_prob_main(args=params, mount_path=mount_path_env)
 
 
 if __name__ == '__main__':

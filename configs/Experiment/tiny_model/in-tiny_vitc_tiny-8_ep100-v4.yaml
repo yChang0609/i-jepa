@@ -1,19 +1,19 @@
 data:
-  batch_size: 64
+  batch_size: 512
   color_jitter_strength: 0.0
   crop_scale:
   - 0.1
   - 1.0
   crop_size: 64
   image_folder: tiny-imagenet-200/
-  num_workers: 2
+  num_workers: 8
   pin_mem: true
   root_path: /home/mislab/Desktop/YungChang/i-jepa/dataset
   use_color_distortion: false
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: logs/in-tiny_vitc_large-8_ep20/
+  folder: logs/tiny/in-tiny_vitc-t8_ep100-v4/
   write_tag: jepa
 mask:
   allow_overlap: false
@@ -33,20 +33,72 @@ mask:
 meta:
   copy_data: false
   load_checkpoint: false
-  model_name: vitc_large
+  model_name: vitc_tiny
   conv_channels:
-  - 64
+  -   8
+  -   8
+  -   8
+  -   8
+  -   8
+  -   8
+  -  16
+  -  16
+  -  16
+  -  16
+  -  16
+  -  32
+  -  32
+  -  32
+  -  32
+  -  32
+  -  64
+  -  64
+  -  64
+  -  64
+  -  64
   - 128
-  - 256
-  - 512
+  - 128
+  - 128
+  - 128
+  - 128
+  - 192
+  - 192
+  - 192
+  - 192
   # - emb_dim
   conv_strides:
-  - 2
-  - 2
-  - 2
-  - 1
+  - 1 # -   8
+  - 1 # -   8
+  - 1 # -   8
+  - 1 # -   8
+  - 1 # -   8
+  - 1 # -   8
+  - 1 # -  16
+  - 1 # -  16
+  - 1 # -  16
+  - 1 # -  16
+  - 1 # -  16
+  - 1 # -  32
+  - 1 # -  32
+  - 1 # -  32
+  - 1 # -  32
+  - 2 # -  32
+  - 1 # -  64
+  - 1 # -  64
+  - 1 # -  64
+  - 1 # -  64
+  - 2 # -  64
+  - 1 # - 128
+  - 1 # - 128
+  - 1 # - 128
+  - 1 # - 128
+  - 2 # - 128
+  - 1 # - 192
+  - 1 # - 192
+  - 1 # - 192
+  - 1 # - 192
   # - 1
-
+  
   pred_depth: 12
   pred_emb_dim: 384
   read_checkpoint: null
@@ -55,7 +107,7 @@ optimization:
   ema:
   - 0.996
   - 1.0
-  epochs: 20
+  epochs: 100
   final_lr: 1.0e-06
   final_weight_decay: 0.4
   ipe_scale: 1.0
