@@ -30,23 +30,46 @@ else
     exit 999
 fi
 
-for file in "$EXP_DIR"/*
-do
-    if [ -f "$file" ]; then
-        echo "run config:$file"
-        logfolder=$(yq .logging.folder $file)
-        train_vit_cls=$(yq '.train_type.vit_cls' $file)
-        train_jepa_cls=$(yq '.train_type.jepa_cls' $file)
+
+if [ -z "$SPECIFIED_CONFIG" ];then 
+    echo "Not SPECIFIED_CONFIG"
+    for file in "$EXP_DIR"/*
+    do
+        if [ -f "$file" ]; then
+            echo "run config:$file"
+            logfolder=$(yq .logging.folder $file)
+            train_vit_cls=$(yq '.train_type.vit_cls' $file)
+            train_jepa_cls=$(yq '.train_type.jepa_cls' $file)
+            if $train_vit_cls ;then
+                echo "Training vit classification"
+                python3 main_vit.py --fname "$file" --devices cuda:0  
+            fi
+            if $train_jepa_cls ;then
+                echo "Training I-JEPA"
+                python3 main.py --fname "$file" --devices cuda:0
+                echo "Evaluate I-JEPA"
+                python3 main_probing.py --fname $MOUNT_PATH/${logfolder//\"/} --devices cuda:0
+            fi
+        fi
+    done
+else #Specified
+    echo "SPECIFIED_CONFIG"
+    config_file=$EXP_DIR/$SPECIFIED_CONFIG
+    if [ -f "$config_file" ]; then
+        echo "run config:$config_file"
+        logfolder=$(yq .logging.folder $config_file)
+        train_vit_cls=$(yq '.train_type.vit_cls' $config_file)
+        train_jepa_cls=$(yq '.train_type.jepa_cls' $config_file)
         if $train_vit_cls ;then
             echo "Training vit classification"
-            python3 main_vit.py --fname "$file" --devices cuda:0  
+            python3 main_vit.py --fname "$config_file" --devices cuda:0  
         fi
         if $train_jepa_cls ;then
             echo "Training I-JEPA"
-            python3 main.py --fname "$file" --devices cuda:0
+            python3 main.py --fname "$config_file" --devices cuda:0
             echo "Evaluate I-JEPA"
             python3 main_probing.py --fname $MOUNT_PATH/${logfolder//\"/} --devices cuda:0
         fi
     fi
-done
+fi
 echo "Script end"
