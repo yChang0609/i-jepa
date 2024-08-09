@@ -16,11 +16,35 @@ from src.utils.schedulers import (
     CosineWDSchedule)
 from src.utils.tensors import trunc_normal_
 
-from torchsummary import summary
+
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
+
+def load_encoder(
+    device,
+    r_path,
+    encoder,
+):
+    try:
+        checkpoint = torch.load(r_path, map_location=torch.device('cpu'))
+        epoch = checkpoint['epoch']
+        
+        # -- loading encoder
+        pretrained_dict = checkpoint['encoder']
+        for k, v in pretrained_dict.items():
+            encoder.state_dict()[k[len("module."):]].copy_(v)
+        logger.info(f'loaded pretrained encoder from epoch {epoch}')
+
+        logger.info(f'read-path: {r_path}')
+        del checkpoint
+
+    except Exception as e:
+        logger.info(f'Encountered exception when loading checkpoint {e}')
+        epoch = 0
+
+    return encoder, epoch
 
 def load_checkpoint(
     device,

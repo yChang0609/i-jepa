@@ -1,5 +1,5 @@
 data:
-  batch_size: 64
+  batch_size: 512
   color_jitter_strength: 0.0
   crop_scale:
   - 0.1
@@ -13,7 +13,7 @@ data:
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: logs/in-tiny_vitc_large-8_ep20/
+  folder: logs/in-tiny_vitc_huge-8_ep20-v2/
   write_tag: jepa
 mask:
   allow_overlap: false
@@ -33,16 +33,36 @@ mask:
 meta:
   copy_data: false
   load_checkpoint: false
-  model_name: vitc_large
+  model_name: vitc_huge
   conv_channels:
+  - 16
+  - 16
+  - 32
+  - 32
+  - 64
   - 64
   - 128
+  - 128
+  - 256
   - 256
   - 512
+  - 512
+  - 1024
+  - 1024
   # - emb_dim
   conv_strides:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
   - 2
+  - 1
   - 2
+  - 1
   - 2
   - 1
   # - 1

@@ -1,5 +1,6 @@
-*.swp
-*.swo
+configs/*
+*.md
+LICENSE
 dataset/*
 logs/*
 __pycache__
