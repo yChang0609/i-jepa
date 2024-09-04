@@ -44,7 +44,7 @@ from src.models import vit_cls
 # --
 log_timings = True
 log_freq = 10
-checkpoint_freq = 50
+checkpoint_freq = 100
 # --
 
 _GLOBAL_SEED = 0

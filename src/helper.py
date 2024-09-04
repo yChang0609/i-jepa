@@ -32,10 +32,11 @@ def load_encoder(
         epoch = checkpoint['epoch']
         
         # -- loading encoder
-        pretrained_dict = checkpoint['encoder']
+        pretrained_dict = checkpoint['target_encoder']
         for k, v in pretrained_dict.items():
             encoder.state_dict()[k[len("module."):]].copy_(v)
         logger.info(f'loaded pretrained encoder from epoch {epoch}')
+
 
         logger.info(f'read-path: {r_path}')
         del checkpoint

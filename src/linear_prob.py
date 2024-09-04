@@ -47,7 +47,7 @@ from src.transforms import make_transforms
 # --
 log_timings = True
 log_freq = 10
-checkpoint_freq = 50
+checkpoint_freq = 150
 # --
 
 _GLOBAL_SEED = 0
@@ -255,7 +255,7 @@ def main(args, mount_path, resume_preempt=False):
                 torch.save(save_dict, l_save_path.format(epoch=f'{epoch + 1}'))
 
     start_epoch = 0
-    # num_epochs = 40
+    num_epochs = 100
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
         logger.info('Epoch %d' % (epoch + 1))
