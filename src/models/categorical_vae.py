@@ -10,7 +10,7 @@ from torch.cuda.amp import autocast
 class Encoder(nn.Module):
     def __init__(self, in_channels, stem_channels, final_feature_width) -> None:
         super().__init__()
-
+        self.in_feature_width = 16
         backbone = []
         # stem
         backbone.append(
@@ -23,11 +23,11 @@ class Encoder(nn.Module):
                 bias=False
             )
         )
-        feature_width = 8//2
+        feature_width = self.in_feature_width//2
         channels = stem_channels
         backbone.append(nn.BatchNorm2d(stem_channels))
         backbone.append(nn.ReLU(inplace=True))
-
+        
         # layers
         while True:
             backbone.append(
@@ -53,7 +53,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         batch_size = x.shape[0]
-        x = rearrange(x, "B (H W) C  -> B C H W",H=8)
+        x = rearrange(x, "B (H W) C  -> B C H W",H=self.in_feature_width)
         x = self.backbone(x)
         x = rearrange(x, "B C H W -> B (C H W)", B=batch_size)
         return x
@@ -143,7 +143,7 @@ class CategoricalVAE(nn.Module):
         super().__init__()
         stem_channels = 256
         self.use_amp = use_amp
-        self.final_feature_width = 2
+        self.final_feature_width = 4
         self.stoch_dim = 32
         self.stoch_flattened_dim = self.stoch_dim*self.stoch_dim
         self.encoder = Encoder(
@@ -156,7 +156,7 @@ class CategoricalVAE(nn.Module):
             dyanmic_hidden_dim=dyanmic_hidden_dim,
             stoch_dim=self.stoch_dim
         )
-        self.image_decoder = Decoder(
+        self.decoder = Decoder(
             stoch_dim=self.stoch_flattened_dim,
             last_channels=self.encoder.last_channels,
             original_in_channels=in_channels,
@@ -186,4 +186,4 @@ class CategoricalVAE(nn.Module):
         return rearrange(sample, "B K C -> B (K C)")
     
     def decode(self, flattened_sample):
-        return self.image_decoder(flattened_sample)
+        return self.decoder(flattened_sample)
