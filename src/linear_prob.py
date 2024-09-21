@@ -156,9 +156,9 @@ def main(args, mount_path, resume_preempt=False):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    dump = os.path.join(folder, 'params-ijepa.yaml')
-    with open(dump, 'w') as f:
-        yaml.dump(args, f)
+    # dump = os.path.join(folder, 'params-ijepa.yaml')
+    # with open(dump, 'w') as f:
+    #     yaml.dump(args, f)
     # ----------------------------------------------------------------------- #
 
     try:

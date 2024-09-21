@@ -11,7 +11,7 @@
 # python3 main_probing.py --fname logs/tiny/in-tiny_vitc-t8_ep100-v2/ --devices cuda:0 
 
 export TRAIN_IN_TINY=true
-export MOUNT_PATH=/home/mislab/Desktop/YungChang/i-jepa/
+export MOUNT_PATH=/home/cgv/Documents/project/EmbodiedAgent/i-jepa/
 #export SPECIFIED_CONFIG=config_name
 
 # python3 main.py --fname experiments/in-tiny_vit_tiny-8_ep100-v0+1.yaml --devices cuda:0

@@ -45,7 +45,7 @@ from src.helper import (
 from src.transforms import make_transforms
 
 from src.models.categorical_vae import CategoricalVAE
-from src.models.vae import VAE
+from models.vanilla_vae import VAE
 from src.models.vision_transformer import VisionTransformer
 from einops import rearrange, repeat, reduce
 from PIL import Image
@@ -310,7 +310,7 @@ def main(args, mount_path, resume_preempt=False):
     jepa_vae.jepa.to(device)
     jepa_vae.vae.to(device)
 
-    emb_decoder = EmbDecoder(encoder.embed_dim, 16)
+    emb_decoder = EmbDecoder(encoder.embed_dim, 8)
     visual_optimizer = torch.optim.AdamW(emb_decoder.parameters())
     visual_criterion = nn.MSELoss()
     emb_decoder.to(device)
