@@ -1,6 +1,7 @@
 *.swp
 *.swo
 configs/RunExperiments/*
+experiments/*
 dataset/*
 logs/*
 __pycache__
