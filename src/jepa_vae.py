@@ -15,6 +15,7 @@ import logging
 import sys
 import yaml
 
+from math import sqrt
 import numpy as np
 
 import torch
@@ -44,6 +45,7 @@ from src.helper import (
 from src.transforms import make_transforms
 
 from src.models.categorical_vae import CategoricalVAE
+from src.models.vae import VAE
 from src.models.vision_transformer import VisionTransformer
 from einops import rearrange, repeat, reduce
 from PIL import Image
@@ -79,7 +81,11 @@ class JEPAbaseVAE(nn.Module):
         if freeze:
             for param in self.jepa.parameters():
                 param.requires_grad = False
-        self.vae = CategoricalVAE(self.jepa.embed_dim, self.jepa.embed_dim, use_amp)
+        if False:
+            vae = CategoricalVAE(self.jepa.embed_dim, self.jepa.embed_dim, use_amp)
+        else:
+            vae = VAE(4096, self.jepa.embed_dim, sqrt(self.jepa.patch_embed.num_patches), use_amp)
+        self.vae = vae
 
     def load_model(self, r_path):
         try:
@@ -108,6 +114,7 @@ class EmbDecoder(nn.Module):
         channels = emb_channel 
         feat_width = 4
         original_in_channels = 3
+        self.in_size = in_size
         szie = in_size
         while True:
             if szie == 32: 
@@ -140,7 +147,7 @@ class EmbDecoder(nn.Module):
         self.backbone = nn.Sequential(*backbone)
 
     def forward(self, x):
-        x = rearrange(x, "B (H W) C  -> B C H W",H=8)
+        x = rearrange(x, "B (H W) C  -> B C H W",H=self.in_size)
         obs_hat = self.backbone(x)
         return obs_hat
 
@@ -213,6 +220,10 @@ def main(args, mount_path, resume_preempt=False):
     
     if not os.path.exists(folder):
         os.makedirs(folder)
+    
+    img_folder = os.path.join(folder, 'image')
+    if not os.path.exists(img_folder):
+        os.makedirs(img_folder)
 
     dump = os.path.join(folder, 'params-ijepa.yaml')
     with open(dump, 'w') as f:
@@ -299,7 +310,7 @@ def main(args, mount_path, resume_preempt=False):
     jepa_vae.jepa.to(device)
     jepa_vae.vae.to(device)
 
-    emb_decoder = EmbDecoder(encoder.embed_dim, 8)
+    emb_decoder = EmbDecoder(encoder.embed_dim, 16)
     visual_optimizer = torch.optim.AdamW(emb_decoder.parameters())
     visual_criterion = nn.MSELoss()
     emb_decoder.to(device)
@@ -320,9 +331,9 @@ def main(args, mount_path, resume_preempt=False):
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
 
     start_epoch = 0
-    # num_epochs = 40
+    num_epochs = 100
     # -- TRAINING LOOP
-    import matplotlib.pyplot as plt
+
     for epoch in range(start_epoch, num_epochs):
         logger.info('Epoch %d' % (epoch + 1))
 
@@ -340,9 +351,11 @@ def main(args, mount_path, resume_preempt=False):
             def vae_train_step():
                 optimizer.zero_grad()
                 emb = jepa_vae.jepa(imgs)
-                _, sample = jepa_vae.vae.encode(emb)
+                z_dis, sample = jepa_vae.vae.encode(emb)
                 emb_hat = jepa_vae.vae.decode(sample)
                 loss = criterion(emb_hat, emb)
+                kld_loss = torch.mean(-0.5 * torch.sum(1 + z_dis[1] - z_dis[0] ** 2 - z_dis[1].exp(), dim = 1), dim = 0)
+                loss = loss + 0.0001 * kld_loss
                 loss.backward()
                 optimizer.step()
 
@@ -400,26 +413,36 @@ def main(args, mount_path, resume_preempt=False):
                 return Image.fromarray(image_np)
 
             for images, _ in unsupervised_loader:
-                idx = torch.randint(0, images.size(0), (1,)).item()  # 隨機選擇索引
+                idx = torch.randint(0, images.size(0), (1,)).item() 
                 random_images = images.to(device)
                 emb = jepa_vae.jepa(random_images)
-                _, sample = jepa_vae.vae.encode(emb)
-                hat_emb = jepa_vae.vae.decode(sample)
+                z_dis, sample_1 = jepa_vae.vae.encode(emb)
+                hat_emb_1 = jepa_vae.vae.decode(sample_1)
+                hat_emb_2 = jepa_vae.vae.decode(jepa_vae.vae.latens_sample(z_dis[0],z_dis[1]))
+                hat_emb_3 = jepa_vae.vae.decode(jepa_vae.vae.latens_sample(z_dis[0],z_dis[1]))
                 hat_jepa_images = emb_decoder(emb)
-                hat_vae_images = emb_decoder(hat_emb)
+                hat_vae_images_1 = emb_decoder(hat_emb_1)
+                hat_vae_images_2 = emb_decoder(hat_emb_2)
+                hat_vae_images_3 = emb_decoder(hat_emb_3)
                 
                 random_image_np = random_images[idx].cpu()
                 hat_jepa_image_np = hat_jepa_images[idx].cpu()
-                hat_vae_image_np = hat_vae_images[idx].cpu()
+                hat_vae_image_np_1 = hat_vae_images_1[idx].cpu()
+                hat_vae_image_np_2 = hat_vae_images_2[idx].cpu()
+                hat_vae_image_np_3 = hat_vae_images_3[idx].cpu()
 
-                image_save_path = os.path.join(folder, f'vae_{epoch+1}-image')
+                image_save_path = os.path.join(img_folder, f'vae_{epoch+1}-image')
                 os.mkdir(image_save_path)
                 image = tensor2pil(random_image_np)
                 image.save(image_save_path+'/orig_imag.png')
                 image = tensor2pil(hat_jepa_image_np)
                 image.save(image_save_path+'/hat_jepa_image.png')
-                image = tensor2pil(hat_vae_image_np)
-                image.save(image_save_path+'/hat_vae_image.png')
+                image = tensor2pil(hat_vae_image_np_1)
+                image.save(image_save_path+'/hat_vae_image_1.png')
+                image = tensor2pil(hat_vae_image_np_2)
+                image.save(image_save_path+'/hat_vae_image_2.png')
+                image = tensor2pil(hat_vae_image_np_3)
+                image.save(image_save_path+'/hat_vae_image_3.png')
                 break    
             
         
