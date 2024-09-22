@@ -6,6 +6,7 @@ from torch.distributions import OneHotCategorical, Normal
 from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
 from torch.cuda.amp import autocast
+from src.models.VAE.base import *
 
 class Encoder(nn.Module):
     def __init__(self, z_dim, in_channels, in_feature_width ,stem_channels=256):
@@ -181,7 +182,7 @@ class Decoder(nn.Module):
         obs_hat = rearrange(obs_hat, "B C H W -> B (H W) C ", B=batch_size)
         return obs_hat
 
-class VAE(nn.Module):
+class VAE(BaseVAE):
     def __init__(self, z_dim, in_channels, in_feature_width, use_amp):
         super().__init__()
         self.use_amp = use_amp
@@ -194,17 +195,25 @@ class VAE(nn.Module):
                                final_feature_width=self.encoder.final_feature_width, 
                                recover_channels=in_channels)
 
-    def latens_sample(self, means, log_vars):
-        std = torch.exp(0.5 * log_vars)
+    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
+        std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        z = means + eps * std
-        return z
+        return eps * std + mu
     
-    def encode(self, input):
-        # with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
+    # -- VAE interface
+    def encode(self, input: Tensor) -> List[Tensor]:
         z_mu, z_logvar = self.encoder(input)
-        return [z_mu, z_logvar],self.latens_sample(z_mu, z_logvar)
+        return [z_mu, z_logvar]
     
-    def decode(self, laten):
-        # with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
-        return self.decoder(laten)
+    def decode(self, z: Tensor) -> Tensor:
+        return self.decoder(z)
+    
+    def sample(self, params:List[Tensor], **kwargs) -> Tensor:
+        return self.reparameterize(params[0],params[1])
+    
+    def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
+        mu, log_var = self.encode(input)
+        z = self.reparameterize(mu, log_var)
+        return  [self.decode(z), input, mu, log_var]
+
+    

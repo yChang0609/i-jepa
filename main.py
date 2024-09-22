@@ -85,10 +85,10 @@ def process_main(rank, train_mode, fname, world_size, devices):
         from src.linear_prob import main as linear_prob_main
         linear_prob_main(args=params, mount_path=mount_path_env)
     elif train_mode == TrainMode.vit_cls:
-        from trian_vit_cls import main as vit_main
+        from src.trian_vit_cls import main as vit_main
         vit_main(args=params, mount_path=mount_path_env)
     elif train_mode == TrainMode.vae:
-        from train_vae import main as vae_main
+        from src.train_vae import main as vae_main
         vae_main(args=params, mount_path=mount_path_env)
 
 if __name__ == '__main__':

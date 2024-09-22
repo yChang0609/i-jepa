@@ -44,8 +44,8 @@ from src.helper import (
     init_opt)
 from src.transforms import make_transforms
 
-from src.models.categorical_vae import CategoricalVAE
-from models.vanilla_vae import VAE
+from src.models.VAE.categorical_vae import CategoricalVAE
+from src.models.VAE.vae import VAE
 from src.models.vision_transformer import VisionTransformer
 from einops import rearrange, repeat, reduce
 from PIL import Image
@@ -261,7 +261,7 @@ def main(args, mount_path, resume_preempt=False):
                            ('%d', 'visual_time (ms)'))
 
     # -- init model
-    encoder, predictor = init_model(
+    jepa_encoder, predictor = init_model(
         device=device,
         patch_size=patch_size,
         crop_size=crop_size,
@@ -271,10 +271,10 @@ def main(args, mount_path, resume_preempt=False):
         conv_channels = conv_channels,
         conv_strides = conv_strides)
 
-    encoder, _ = load_encoder(
+    jepa_encoder, _ = load_encoder(
         device=device,
         r_path=load_path,
-        encoder=encoder)
+        encoder=jepa_encoder)
     
     del predictor
     torch.cuda.empty_cache() 
@@ -304,13 +304,13 @@ def main(args, mount_path, resume_preempt=False):
             drop_last=True)
     ipe = len(unsupervised_loader)
     
-    jepa_vae = JEPAbaseVAE(encoder, use_amp=use_bfloat16)
-    optimizer = torch.optim.AdamW(jepa_vae.vae.parameters())
-    criterion = nn.MSELoss()
+    jepa_vae = JEPAbaseVAE(jepa_encoder, use_amp=use_bfloat16)
+    vae_optimizer = torch.optim.AdamW(jepa_vae.vae.parameters())
+    vae_criterion = nn.MSELoss()
     jepa_vae.jepa.to(device)
     jepa_vae.vae.to(device)
 
-    emb_decoder = EmbDecoder(encoder.embed_dim, 8)
+    emb_decoder = EmbDecoder(jepa_encoder.embed_dim, 8)
     visual_optimizer = torch.optim.AdamW(emb_decoder.parameters())
     visual_criterion = nn.MSELoss()
     emb_decoder.to(device)
@@ -321,7 +321,7 @@ def main(args, mount_path, resume_preempt=False):
     def save_checkpoint(epoch):
         save_dict = {
             'vae':jepa_vae.vae.state_dict(),
-            'opt': optimizer.state_dict(),
+            'opt': vae_optimizer.state_dict(),
             'epoch': epoch,
             'loss': loss_meter.avg,
         }
@@ -331,7 +331,7 @@ def main(args, mount_path, resume_preempt=False):
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
 
     start_epoch = 0
-    num_epochs = 100
+    num_epochs = 100 if num_epochs > 100 else num_epochs
     # -- TRAINING LOOP
 
     for epoch in range(start_epoch, num_epochs):
@@ -345,24 +345,29 @@ def main(args, mount_path, resume_preempt=False):
         
 
         for itr, udata in enumerate(unsupervised_loader):
-            imgs, labels = udata
+            imgs, _ = udata
             imgs = imgs.to(device)
 
             def vae_train_step():
-                optimizer.zero_grad()
+                vae_optimizer.zero_grad()
+                # -- JEPA and VAE
                 emb = jepa_vae.jepa(imgs)
-                z_dis, sample = jepa_vae.vae.encode(emb)
-                emb_hat = jepa_vae.vae.decode(sample)
-                loss = criterion(emb_hat, emb)
-                kld_loss = torch.mean(-0.5 * torch.sum(1 + z_dis[1] - z_dis[0] ** 2 - z_dis[1].exp(), dim = 1), dim = 0)
-                loss = loss + 0.0001 * kld_loss
-                loss.backward()
-                optimizer.step()
+                output = jepa_vae.vae(emb)
+                recon, gt = output[0], output[1]
+                mu, logvar = output[2],output[3]
 
-                return float(loss)
+                
+                # -- Loss computing
+                kl_wight = 0.0001
+                recon_loss = vae_criterion(recon, gt)
+                kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim = 1), dim = 0)
+                loss = recon_loss + kl_wight*kld_loss
+                loss.backward()
+                vae_optimizer.step()
+                return float(loss), float(recon_loss), float(kl_wight*kld_loss)
             
-            loss, etime = gpu_timer(vae_train_step)
-            loss_meter.update(loss)
+            vae_loss, etime = gpu_timer(vae_train_step)
+            loss_meter.update(vae_loss[0])
             time_meter.update(etime)
 
 
@@ -385,9 +390,9 @@ def main(args, mount_path, resume_preempt=False):
                 mem = torch.cuda.max_memory_allocated() / 1024.**2
                 csv_logger.log(
                     epoch + 1, itr, 
-                    loss, mem, etime,
+                    vae_loss[0], mem, etime,
                     visual_loss, visual_etime)
-                if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
+                if (itr % log_freq == 0) or np.isnan(vae_loss[0]) or np.isinf(vae_loss[0]):
                     logger.info('[%d, %5d] VAE loss: %.3f '
                                 '[mem: %.2e] '
                                 '(%.1f ms)'
@@ -401,7 +406,7 @@ def main(args, mount_path, resume_preempt=False):
                                    visual_loss_meter.avg,
                                    visual_time_meter.avg))
             log_stats()
-            assert not np.isnan(loss), 'loss is nan'
+            assert not np.isnan(vae_loss[0]), 'loss is nan'
 
         with torch.no_grad():
             def tensor2pil(tensor):
@@ -416,10 +421,11 @@ def main(args, mount_path, resume_preempt=False):
                 idx = torch.randint(0, images.size(0), (1,)).item() 
                 random_images = images.to(device)
                 emb = jepa_vae.jepa(random_images)
-                z_dis, sample_1 = jepa_vae.vae.encode(emb)
-                hat_emb_1 = jepa_vae.vae.decode(sample_1)
-                hat_emb_2 = jepa_vae.vae.decode(jepa_vae.vae.latens_sample(z_dis[0],z_dis[1]))
-                hat_emb_3 = jepa_vae.vae.decode(jepa_vae.vae.latens_sample(z_dis[0],z_dis[1]))
+                z_dis = jepa_vae.vae.encode(emb)
+                hat_emb_1 = jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis))
+                hat_emb_2 = jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis))
+                hat_emb_3 = jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis))
+                
                 hat_jepa_images = emb_decoder(emb)
                 hat_vae_images_1 = emb_decoder(hat_emb_1)
                 hat_vae_images_2 = emb_decoder(hat_emb_2)

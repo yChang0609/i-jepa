@@ -6,6 +6,7 @@ from torch.distributions import OneHotCategorical, Normal
 from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
 from torch.cuda.amp import autocast
+from src.models.VAE.base import *
 
 class Encoder(nn.Module):
     def __init__(self, in_channels, stem_channels, final_feature_width) -> None:
@@ -137,7 +138,7 @@ class Decoder(nn.Module):
         obs_hat = rearrange(obs_hat, "B C H W -> B (H W) C ", B=batch_size)
         return obs_hat
     
-class CategoricalVAE(nn.Module):
+class CategoricalVAE(BaseVAE):
     '''Categorical Variational Auto Encoder'''
     def __init__(self, in_channels, dyanmic_hidden_dim, use_amp):
         super().__init__()
@@ -174,16 +175,24 @@ class CategoricalVAE(nn.Module):
             sample = dist.probs
         return sample
     
-    def encode(self, input):
+    def flatten_sample(self, sample):
+        return rearrange(sample, "B K C -> B (K C)")
+
+    # -- VAE interface
+    def encode(self, input: Tensor) -> List[Tensor]:
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
             embedding = self.encoder(input)
             post_logits = self.dist_head.forward_post(embedding)
-            sample = self.stright_throught_gradient(post_logits, sample_mode="random_sample")
-            flattened_sample = self.flatten_sample(sample)
-        return post_logits, flattened_sample
+        return [post_logits]
     
-    def flatten_sample(self, sample):
-        return rearrange(sample, "B K C -> B (K C)")
+    def decode(self, z: Tensor) -> Tensor:
+        z = self.flatten_sample(z)
+        return self.decoder(z)
     
-    def decode(self, flattened_sample):
-        return self.decoder(flattened_sample)
+    def sample(self, param:List[Tensor], **kwargs) -> Tensor:
+        return self.stright_throught_gradient(param[0], sample_mode="random_sample")
+    
+    def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
+        post_logits = self.encode(input)[0]
+        z = self.sample(post_logits)
+        return  [self.decode(z), input, post_logits]
