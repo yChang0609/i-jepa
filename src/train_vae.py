@@ -91,8 +91,7 @@ class JEPAbaseVAE(nn.Module):
         if vae_type == 'categorical':
             vae = CategoricalVAE(stoch_dim=32, # 32 * 32
                                 in_channels=self.jepa.embed_dim, 
-                                in_feature_width=sqrt(self.jepa.patch_embed.num_patches), 
-                                dyanmic_hidden_dim=self.jepa.embed_dim, 
+                                in_feature_width=sqrt(self.jepa.patch_embed.num_patches),
                                 use_amp=use_amp)
         assert not vae==None
         self.vae = vae
@@ -125,7 +124,7 @@ class EmbDecoder(nn.Module):
         channels = emb_channel 
         feat_width = 4
         original_in_channels = 3
-        self.in_size = in_size
+        self.in_size = int(in_size)
         szie = in_size
         while True:
             if szie == recon_image_width//2: 
@@ -323,14 +322,18 @@ def main(args, mount_path, vae_type , resume_preempt=False):
     jepa_vae = JEPAbaseVAE(jepa_encoder, use_amp=use_bfloat16, vae_type=vae_type)
     vae_optimizer = torch.optim.AdamW(jepa_vae.vae.parameters())
     vae_criterion = nn.MSELoss()
-    jepa_vae.jepa.to(device)
-    jepa_vae.vae.to(device)
+    
 
     emb_decoder = EmbDecoder(jepa_encoder.embed_dim, sqrt(jepa_encoder.patch_embed.num_patches), crop_size)
     visual_optimizer = torch.optim.AdamW(emb_decoder.parameters())
     visual_criterion = nn.MSELoss()
+    
+    
+    jepa_vae.jepa.to(device)
+    jepa_vae.vae.to(device)
     emb_decoder.to(device)
     
+
     logger.info(jepa_vae)
     logger.info(emb_decoder)
     
@@ -368,7 +371,8 @@ def main(args, mount_path, vae_type , resume_preempt=False):
             def vae_train_step():
                 vae_optimizer.zero_grad()
                 # -- JEPA and VAE
-                emb = jepa_vae.jepa(imgs)
+                with torch.no_grad():
+                    emb = jepa_vae.jepa(imgs)
                 output = jepa_vae.vae(emb)
                 recon, gt = output[0], output[1]
 
