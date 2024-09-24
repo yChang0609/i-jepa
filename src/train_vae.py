@@ -374,8 +374,6 @@ def main(args, mount_path, vae_type , resume_preempt=False):
 
 
                 # -- Loss computing
-                print(recon.shape)
-                print(gt.shape)
                 recon_loss = vae_criterion(recon, gt)
                 ## -- VAE differen code
                 if vae_type == 'normal':
