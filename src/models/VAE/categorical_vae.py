@@ -9,11 +9,31 @@ from torch.cuda.amp import autocast
 from src.models.VAE.base import *
 
 class Encoder(nn.Module):
-    def __init__(self, in_channels, stem_channels, final_feature_width) -> None:
+    def __init__(self, in_channels, in_feature_width, stem_channels, final_feature_width) -> None:
         super().__init__()
-        self.in_feature_width = 16
+        self.in_feature_width = int(in_feature_width)
         backbone = []
         # stem
+        backbone.append(
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=in_channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
+        backbone.append(
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=in_channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
         backbone.append(
             nn.Conv2d(
                 in_channels=in_channels,
@@ -24,6 +44,7 @@ class Encoder(nn.Module):
                 bias=False
             )
         )
+        
         feature_width = self.in_feature_width//2
         channels = stem_channels
         backbone.append(nn.BatchNorm2d(stem_channels))
@@ -31,6 +52,26 @@ class Encoder(nn.Module):
         
         # layers
         while True:
+            backbone.append(
+                nn.Conv2d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
+            backbone.append(
+                nn.Conv2d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
             backbone.append(
                 nn.Conv2d(
                     in_channels=channels,
@@ -46,11 +87,12 @@ class Encoder(nn.Module):
             backbone.append(nn.BatchNorm2d(channels))
             backbone.append(nn.ReLU(inplace=True))
 
-            if feature_width == final_feature_width:
+            if feature_width <= final_feature_width:
                 break
 
         self.backbone = nn.Sequential(*backbone)
-        self.last_channels = channels
+        self.last_channels = int(channels)
+        self.last_width = int(feature_width)
 
     def forward(self, x):
         batch_size = x.shape[0]
@@ -89,7 +131,7 @@ class DistHead(nn.Module):
         return logits
     
 class Decoder(nn.Module):
-    def __init__(self, stoch_dim, last_channels, original_in_channels, stem_channels, final_feature_width) -> None:
+    def __init__(self, stoch_dim, last_channels, recover_channels, stem_channels, final_feature_width) -> None:
         super().__init__()
 
         backbone = []
@@ -120,14 +162,57 @@ class Decoder(nn.Module):
             feat_width *= 2
             backbone.append(nn.BatchNorm2d(channels))
             backbone.append(nn.ReLU(inplace=True))
+            backbone.append(
+                nn.ConvTranspose2d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
+            backbone.append(
+                nn.ConvTranspose2d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
 
+        # recover layer
         backbone.append(
             nn.ConvTranspose2d(
                 in_channels=channels,
-                out_channels=original_in_channels,
+                out_channels=recover_channels,
                 kernel_size=4,
                 stride=2,
                 padding=1
+            )
+        )
+        backbone.append(nn.BatchNorm2d(recover_channels))
+        backbone.append(nn.ReLU(inplace=True))
+        backbone.append(
+            nn.ConvTranspose2d(
+                in_channels=recover_channels,
+                out_channels=recover_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False
+            )
+        )
+        backbone.append(
+            nn.ConvTranspose2d(
+                in_channels=recover_channels,
+                out_channels=recover_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False
             )
         )
         self.backbone = nn.Sequential(*backbone)
@@ -140,27 +225,31 @@ class Decoder(nn.Module):
     
 class CategoricalVAE(BaseVAE):
     '''Categorical Variational Auto Encoder'''
-    def __init__(self, in_channels, dyanmic_hidden_dim, use_amp):
+    def __init__(self, stoch_dim, in_channels, in_feature_width, dyanmic_hidden_dim, use_amp, stem_channels=256):
         super().__init__()
-        stem_channels = 256
         self.use_amp = use_amp
         self.final_feature_width = 4
-        self.stoch_dim = 32
+        self.stoch_dim = stoch_dim
         self.stoch_flattened_dim = self.stoch_dim*self.stoch_dim
+       
         self.encoder = Encoder(
             in_channels=in_channels,
+            in_feature_width = in_feature_width,
             stem_channels=stem_channels,
             final_feature_width=self.final_feature_width
         )
+        self.final_feature_width = self.encoder.last_width
+
         self.dist_head = DistHead(
             image_feat_dim=self.encoder.last_channels*self.final_feature_width*self.final_feature_width,
             dyanmic_hidden_dim=dyanmic_hidden_dim,
             stoch_dim=self.stoch_dim
         )
+
         self.decoder = Decoder(
             stoch_dim=self.stoch_flattened_dim,
             last_channels=self.encoder.last_channels,
-            original_in_channels=in_channels,
+            recover_channels=in_channels,
             stem_channels=stem_channels,
             final_feature_width=self.final_feature_width
         )
@@ -189,10 +278,10 @@ class CategoricalVAE(BaseVAE):
         z = self.flatten_sample(z)
         return self.decoder(z)
     
-    def sample(self, param:List[Tensor], **kwargs) -> Tensor:
-        return self.stright_throught_gradient(param[0], sample_mode="random_sample")
+    def sample(self, params:List[Tensor], **kwargs) -> Tensor:
+        return self.stright_throught_gradient(params[0], sample_mode="random_sample")
     
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
         post_logits = self.encode(input)[0]
-        z = self.sample(post_logits)
+        z = self.stright_throught_gradient(post_logits, sample_mode="random_sample")
         return  [self.decode(z), input, post_logits]

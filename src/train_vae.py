@@ -53,7 +53,7 @@ from PIL import Image
 # --
 log_timings = True
 log_freq = 10
-checkpoint_freq = 50
+checkpoint_freq = 100
 # --
 
 _GLOBAL_SEED = 0
@@ -75,17 +75,28 @@ def compute_accuracy(output, target, topk=(1,)):
 
 
 class JEPAbaseVAE(nn.Module):
-    def __init__(self, pre_train:VisionTransformer, use_amp, freeze = True):
+    def __init__(self, pre_train:VisionTransformer, use_amp, vae_type='normal', freeze = True):
         super(JEPAbaseVAE, self).__init__()
         self.jepa = pre_train
         if freeze:
             for param in self.jepa.parameters():
                 param.requires_grad = False
-        if False:
-            vae = CategoricalVAE(self.jepa.embed_dim, self.jepa.embed_dim, use_amp)
-        else:
-            vae = VAE(4096, self.jepa.embed_dim, sqrt(self.jepa.patch_embed.num_patches), use_amp)
+
+        ## -- VAE differen code
+        if vae_type == 'normal':
+            vae = VAE(z_dim=4096, 
+                      in_channels=self.jepa.embed_dim, 
+                      in_feature_width=sqrt(self.jepa.patch_embed.num_patches), 
+                      use_amp=use_amp) 
+        if vae_type == 'categorical':
+            vae = CategoricalVAE(stoch_dim=32, # 32 * 32
+                                in_channels=self.jepa.embed_dim, 
+                                in_feature_width=sqrt(self.jepa.patch_embed.num_patches), 
+                                dyanmic_hidden_dim=self.jepa.embed_dim, 
+                                use_amp=use_amp)
+        assert not vae==None
         self.vae = vae
+    
 
     def load_model(self, r_path):
         try:
@@ -108,7 +119,7 @@ class JEPAbaseVAE(nn.Module):
         return epoch
 
 class EmbDecoder(nn.Module):
-    def __init__(self, emb_channel, in_size):
+    def __init__(self, emb_channel, in_size, recon_image_width):
         super().__init__()
         backbone = []
         channels = emb_channel 
@@ -117,7 +128,7 @@ class EmbDecoder(nn.Module):
         self.in_size = in_size
         szie = in_size
         while True:
-            if szie == 32: 
+            if szie == recon_image_width//2: 
                 break
             backbone.append(
                 nn.ConvTranspose2d(
@@ -152,7 +163,7 @@ class EmbDecoder(nn.Module):
         return obs_hat
 
 
-def main(args, mount_path, resume_preempt=False):
+def main(args, mount_path, vae_type , resume_preempt=False):
 
     # ----------------------------------------------------------------------- #
     #  PASSED IN PARAMS FROM CONFIG FILE
@@ -212,6 +223,10 @@ def main(args, mount_path, resume_preempt=False):
     start_lr = args['optimization']['start_lr']
     lr = args['optimization']['lr']
     final_lr = args['optimization']['final_lr']
+    
+    # -- Trianing setting 
+    kl_weight = args['training']['vae']['kl_weight']
+    num_sample = args['training']['vae']['num_sample']
 
     # -- LOGGING
     folder = args['logging']['folder']
@@ -221,13 +236,13 @@ def main(args, mount_path, resume_preempt=False):
     if not os.path.exists(folder):
         os.makedirs(folder)
     
-    img_folder = os.path.join(folder, 'image')
+    img_folder = os.path.join(folder, f'vae-{vae_type}_images')
     if not os.path.exists(img_folder):
         os.makedirs(img_folder)
 
-    dump = os.path.join(folder, 'params-ijepa.yaml')
-    with open(dump, 'w') as f:
-        yaml.dump(args, f)
+    # dump = os.path.join(folder, 'params-ijepa.yaml')
+    # with open(dump, 'w') as f:
+    #     yaml.dump(args, f)
     # ----------------------------------------------------------------------- #
 
     try:
@@ -245,7 +260,7 @@ def main(args, mount_path, resume_preempt=False):
     latest_path = os.path.join(folder, f'{tag}-latest.pth.tar')
     load_path =  os.path.join(folder, r_file) if r_file is not None else latest_path
 
-    tag = "vae"
+    tag = f"vae-{vae_type}"
     log_file = os.path.join(folder, f'{tag}_r{rank}.csv')
     save_path = os.path.join(folder, f'{tag}' + '-ep{epoch}.pth.tar')
     latest_path = os.path.join(folder, f'{tag}-latest.pth.tar')
@@ -304,17 +319,18 @@ def main(args, mount_path, resume_preempt=False):
             drop_last=True)
     ipe = len(unsupervised_loader)
     
-    jepa_vae = JEPAbaseVAE(jepa_encoder, use_amp=use_bfloat16)
+    logger.info("Create Model")
+    jepa_vae = JEPAbaseVAE(jepa_encoder, use_amp=use_bfloat16, vae_type=vae_type)
     vae_optimizer = torch.optim.AdamW(jepa_vae.vae.parameters())
     vae_criterion = nn.MSELoss()
     jepa_vae.jepa.to(device)
     jepa_vae.vae.to(device)
 
-    emb_decoder = EmbDecoder(jepa_encoder.embed_dim, 8)
+    emb_decoder = EmbDecoder(jepa_encoder.embed_dim, sqrt(jepa_encoder.patch_embed.num_patches), crop_size)
     visual_optimizer = torch.optim.AdamW(emb_decoder.parameters())
     visual_criterion = nn.MSELoss()
     emb_decoder.to(device)
-
+    
     logger.info(jepa_vae)
     logger.info(emb_decoder)
     
@@ -323,7 +339,7 @@ def main(args, mount_path, resume_preempt=False):
             'vae':jepa_vae.vae.state_dict(),
             'opt': vae_optimizer.state_dict(),
             'epoch': epoch,
-            'loss': loss_meter.avg,
+            'loss': vae_loss_meter.avg,
         }
         if rank == 0:
             torch.save(save_dict, latest_path)
@@ -337,13 +353,14 @@ def main(args, mount_path, resume_preempt=False):
     for epoch in range(start_epoch, num_epochs):
         logger.info('Epoch %d' % (epoch + 1))
 
-        loss_meter = AverageMeter()
+        vae_loss_meter = AverageMeter()
+        recon_loss_meter = AverageMeter()
+        kl_loss_meter = AverageMeter()
         time_meter = AverageMeter()
 
         visual_loss_meter = AverageMeter()
         visual_time_meter = AverageMeter()
         
-
         for itr, udata in enumerate(unsupervised_loader):
             imgs, _ = udata
             imgs = imgs.to(device)
@@ -354,20 +371,39 @@ def main(args, mount_path, resume_preempt=False):
                 emb = jepa_vae.jepa(imgs)
                 output = jepa_vae.vae(emb)
                 recon, gt = output[0], output[1]
-                mu, logvar = output[2],output[3]
 
-                
+
                 # -- Loss computing
-                kl_wight = 0.0001
+                print(recon.shape)
+                print(gt.shape)
                 recon_loss = vae_criterion(recon, gt)
-                kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim = 1), dim = 0)
-                loss = recon_loss + kl_wight*kld_loss
+                ## -- VAE differen code
+                if vae_type == 'normal':
+                    mu, logvar = output[2],output[3]
+                    kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim = 1), dim = 0)
+
+                if vae_type == 'categorical':
+                    logits = output[2]
+                    q_p = F.softmax(logits, dim=-1) # Convert the categorical codes into probabilities
+                    # KL divergence between gumbel-softmax distribution
+                    eps = 1e-7
+
+                    # Entropy of the logits
+                    h1 = q_p * torch.log(q_p + eps)
+
+                    # Cross entropy with the categorical distribution
+                    h2 = q_p * np.log(1. / jepa_vae.vae.stoch_dim + eps)
+                    kld_loss = torch.mean(torch.sum(h1 - h2, dim =(1,2)), dim=0)
+                
+                loss = recon_loss + kl_weight*kld_loss
                 loss.backward()
                 vae_optimizer.step()
-                return float(loss), float(recon_loss), float(kl_wight*kld_loss)
+                return float(loss), float(recon_loss), float(kl_weight*kld_loss)
             
-            vae_loss, etime = gpu_timer(vae_train_step)
-            loss_meter.update(vae_loss[0])
+            loss_list, etime = gpu_timer(vae_train_step)
+            vae_loss_meter.update(loss_list[0])
+            recon_loss_meter.update(loss_list[1])
+            kl_loss_meter.update(loss_list[2])
             time_meter.update(etime)
 
 
@@ -390,14 +426,16 @@ def main(args, mount_path, resume_preempt=False):
                 mem = torch.cuda.max_memory_allocated() / 1024.**2
                 csv_logger.log(
                     epoch + 1, itr, 
-                    vae_loss[0], mem, etime,
+                    loss_list[0], mem, etime,
                     visual_loss, visual_etime)
-                if (itr % log_freq == 0) or np.isnan(vae_loss[0]) or np.isinf(vae_loss[0]):
-                    logger.info('[%d, %5d] VAE loss: %.3f '
+                if (itr % log_freq == 0) or np.isnan(loss_list[0]) or np.isinf(loss_list[0]):
+                    logger.info('[%d, %5d] VAE loss: %.3f (Recon: %.3f, KL: %.3f)'
                                 '[mem: %.2e] '
                                 '(%.1f ms)'
                                 % (epoch + 1, itr,
-                                   loss_meter.avg,
+                                   vae_loss_meter.avg,
+                                   recon_loss_meter.avg,
+                                   kl_loss_meter.avg,
                                    mem,
                                    time_meter.avg))
                     logger.info('[%d, %5d] visual loss: %.3f '
@@ -406,13 +444,14 @@ def main(args, mount_path, resume_preempt=False):
                                    visual_loss_meter.avg,
                                    visual_time_meter.avg))
             log_stats()
-            assert not np.isnan(vae_loss[0]), 'loss is nan'
+            assert not np.isnan(loss_list[0]), 'loss is nan'
 
         with torch.no_grad():
             def tensor2pil(tensor):
                 mean = [0.485, 0.456, 0.406]
                 std = [0.229, 0.224, 0.225]
                 images = tensor * torch.tensor(std).view(3, 1, 1) + torch.tensor(mean).view(3, 1, 1)
+                images = torch.clamp(images, 0, 1)
                 image = images.permute(1, 2, 0).numpy()
                 image_np = (image * 255).astype(np.uint8)
                 return Image.fromarray(image_np)
@@ -422,20 +461,16 @@ def main(args, mount_path, resume_preempt=False):
                 random_images = images.to(device)
                 emb = jepa_vae.jepa(random_images)
                 z_dis = jepa_vae.vae.encode(emb)
-                hat_emb_1 = jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis))
-                hat_emb_2 = jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis))
-                hat_emb_3 = jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis))
+                
+                het_emb_list = [jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis)) for _ in range(num_sample) ]
                 
                 hat_jepa_images = emb_decoder(emb)
-                hat_vae_images_1 = emb_decoder(hat_emb_1)
-                hat_vae_images_2 = emb_decoder(hat_emb_2)
-                hat_vae_images_3 = emb_decoder(hat_emb_3)
+                hat_vae_images_list = [emb_decoder(het_emb_list[i]) for i in range(num_sample)]
+  
                 
                 random_image_np = random_images[idx].cpu()
                 hat_jepa_image_np = hat_jepa_images[idx].cpu()
-                hat_vae_image_np_1 = hat_vae_images_1[idx].cpu()
-                hat_vae_image_np_2 = hat_vae_images_2[idx].cpu()
-                hat_vae_image_np_3 = hat_vae_images_3[idx].cpu()
+                hat_vae_image_np_list = [hat_vae_images_list[i][idx].cpu() for i in range(num_sample)]
 
                 image_save_path = os.path.join(img_folder, f'vae_{epoch+1}-image')
                 os.mkdir(image_save_path)
@@ -443,17 +478,14 @@ def main(args, mount_path, resume_preempt=False):
                 image.save(image_save_path+'/orig_imag.png')
                 image = tensor2pil(hat_jepa_image_np)
                 image.save(image_save_path+'/hat_jepa_image.png')
-                image = tensor2pil(hat_vae_image_np_1)
-                image.save(image_save_path+'/hat_vae_image_1.png')
-                image = tensor2pil(hat_vae_image_np_2)
-                image.save(image_save_path+'/hat_vae_image_2.png')
-                image = tensor2pil(hat_vae_image_np_3)
-                image.save(image_save_path+'/hat_vae_image_3.png')
-                break    
-            
+                for i in range(num_sample):
+                    image = tensor2pil(hat_vae_image_np_list[i])
+                    image.save(image_save_path+f'/hat_vae_image_{i+1}.png')
+
+                break  
         
         # -- Save Checkpoint after every epoch
-        logger.info('avg. loss %.3f' % loss_meter.avg)
+        logger.info('avg. loss %.3f' % vae_loss_meter.avg)
         save_checkpoint(epoch+1)
 
 if __name__ == "__main__":

@@ -86,7 +86,7 @@ class Encoder(nn.Module):
             backbone.append(nn.BatchNorm2d(channels))
             backbone.append(nn.ReLU(inplace=True))
 
-            if feature_width <= 2:
+            if feature_width <= 4:
                 break
         
         mlp = []
@@ -141,30 +141,30 @@ class Decoder(nn.Module):
             )
             channels //= 2
             feat_width *= 2
-            backbone.append(
-                nn.ConvTranspose2d(
-                    in_channels=channels,
-                    out_channels=channels,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=False
-                )
-            )
-            backbone.append(
-                nn.ConvTranspose2d(
-                    in_channels=channels,
-                    out_channels=channels,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=False
-                )
-            )
-
             backbone.append(nn.BatchNorm2d(channels))
             backbone.append(nn.ReLU(inplace=True))
-
+            backbone.append(
+                nn.ConvTranspose2d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
+            backbone.append(
+                nn.ConvTranspose2d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    bias=False
+                )
+            )
+            
+        # recover layer
         backbone.append(
             nn.ConvTranspose2d(
                 in_channels=channels,
@@ -172,6 +172,28 @@ class Decoder(nn.Module):
                 kernel_size=4,
                 stride=2,
                 padding=1
+            )
+        )
+        backbone.append(nn.BatchNorm2d(recover_channels))
+        backbone.append(nn.ReLU(inplace=True))
+        backbone.append(
+            nn.ConvTranspose2d(
+                in_channels=recover_channels,
+                out_channels=recover_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False
+            )
+        )
+        backbone.append(
+            nn.ConvTranspose2d(
+                in_channels=recover_channels,
+                out_channels=recover_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False
             )
         )
         self.backbone = nn.Sequential(*backbone)
