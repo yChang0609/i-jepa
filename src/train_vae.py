@@ -44,8 +44,7 @@ from src.helper import (
     init_opt)
 from src.transforms import make_transforms
 
-from src.models.VAE.categorical_vae import CategoricalVAE
-from src.models.VAE.vae import VAE
+
 from src.models.vision_transformer import VisionTransformer
 from einops import rearrange, repeat, reduce
 from PIL import Image
@@ -53,7 +52,7 @@ from PIL import Image
 # --
 log_timings = True
 log_freq = 10
-checkpoint_freq = 100
+checkpoint_freq = 150
 # --
 
 _GLOBAL_SEED = 0
@@ -84,15 +83,23 @@ class JEPAbaseVAE(nn.Module):
 
         ## -- VAE differen code
         if vae_type == 'normal':
+            from src.models.VAE.vae import VAE      
             vae = VAE(z_dim=4096, 
                       in_channels=self.jepa.embed_dim, 
                       in_feature_width=sqrt(self.jepa.patch_embed.num_patches), 
                       use_amp=use_amp) 
         if vae_type == 'categorical':
+            from src.models.VAE.categorical_vae import CategoricalVAE
             vae = CategoricalVAE(stoch_dim=32, # 32 * 32
                                 in_channels=self.jepa.embed_dim, 
                                 in_feature_width=sqrt(self.jepa.patch_embed.num_patches),
                                 use_amp=use_amp)
+        if vae_type == 'auto_encoder':
+            from src.models.VAE.autoencoder import AutoEncoder
+            vae = AutoEncoder(z_dim=8192, 
+                              in_channels=self.jepa.embed_dim, 
+                              in_feature_width=sqrt(self.jepa.patch_embed.num_patches),
+                              use_amp=use_amp)
         assert not vae==None
         self.vae = vae
     
@@ -350,11 +357,11 @@ def main(args, mount_path, vae_type , resume_preempt=False):
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
 
     start_epoch = 0
-    num_epochs = 100 if num_epochs > 100 else num_epochs
-    # -- TRAINING LOOP
+    # num_epochs = 100 if num_epochs > 100 else num_epochs
 
+    # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
-        logger.info('Epoch %d' % (epoch + 1))
+        logger.info('Epoch %d /%d' % (epoch + 1, num_epochs))
 
         vae_loss_meter = AverageMeter()
         recon_loss_meter = AverageMeter()
@@ -383,6 +390,7 @@ def main(args, mount_path, vae_type , resume_preempt=False):
                 if vae_type == 'normal':
                     mu, logvar = output[2],output[3]
                     kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim = 1), dim = 0)
+                    loss = recon_loss + kl_weight*kld_loss
 
                 if vae_type == 'categorical':
                     logits = output[2]
@@ -396,8 +404,11 @@ def main(args, mount_path, vae_type , resume_preempt=False):
                     # Cross entropy with the categorical distribution
                     h2 = q_p * np.log(1. / jepa_vae.vae.stoch_dim + eps)
                     kld_loss = torch.mean(torch.sum(h1 - h2, dim =(1,2)), dim=0)
-                
-                loss = recon_loss + kl_weight*kld_loss
+                    loss = recon_loss + kl_weight*kld_loss
+                if vae_type == 'auto_encoder':
+                    kld_loss=0.0
+                    loss = recon_loss
+
                 loss.backward()
                 vae_optimizer.step()
                 return float(loss), float(recon_loss), float(kl_weight*kld_loss)
