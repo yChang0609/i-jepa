@@ -73,12 +73,33 @@ export MOUNT_PATH=/home/cgv/Documents/project/EmbodiedAgent/i-jepa/
 # python3 main_probing.py --fname $MOUNT_PATH/logs/tiny/in-tiny_vit-t4_ep100/ --devices cuda:0
 
 ## Best setting
-python3 main.py --fname experiments/in-tiny_vit_tiny-4_Best_ep100.yaml --devices cuda:0
-python3 main_probing.py --fname $MOUNT_PATH/logs/tiny/in-tiny_vit-t4_Best_ep100/ --devices cuda:0
+# python3 main.py --fname experiments/in-tiny_vit_tiny-4_Best_ep100.yaml --devices cuda:0
+# python3 main_probing.py --fname $MOUNT_PATH/logs/tiny/in-tiny_vit-t4_Best_ep100/ --devices cuda:0
 
-python3 main.py --fname experiments/in-tiny_vit_tiny-4_Best_ep300.yaml --devices cuda:0
-python3 main_probing.py --fname $MOUNT_PATH/logs/tiny/in-tiny_vit-t4_Best_ep300/ --devices cuda:0
+# python3 main.py --fname experiments/in-tiny_vit_tiny-4_Best_ep300.yaml --devices cuda:0
+# python3 main_probing.py --fname $MOUNT_PATH/logs/tiny/in-tiny_vit-t4_Best_ep300/ --devices cuda:0
 
+## VAE
+# python main.py --train cat_vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_H --devices cuda:0
+# python main.py --train vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_H --devices cuda:0
+
+# python main.py --train cat_vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_L --devices cuda:0
+# python main.py --train vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_L --devices cuda:0
+
+# python main.py --train cat_vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_M --devices cuda:0
+# python main.py --train vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_M --devices cuda:0
+
+# python main.py --train cat_vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_S --devices cuda:0
+# python main.py --train vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_S --devices cuda:0
+# python main.py --train ae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_S --devices cuda:0
+
+# python main.py --train cat_vae --fname $MOUNT_PATH/logs/mine/in-tiny_vit-t16_N_ep100 --devices cuda:0
+# python main.py --train vae --fname $MOUNT_PATH/logs/mine/in-tiny_vit-t16_N_ep100 --devices cuda:0
+# python main.py --train ae --fname $MOUNT_PATH/logs/mine/in-tiny_vit-t16_N_ep100 --devices cuda:0
+
+# python main.py --train vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_S500 --devices cuda:0
+python main.py --train ae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_S500 --devices cuda:0
+python main.py --train cat_vae --fname $MOUNT_PATH/logs/vae/in-tiny_vit-t4_Best_ep100_S500 --devices cuda:0
 
 # ./run_script.sh
 

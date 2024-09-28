@@ -96,7 +96,7 @@ class JEPAbaseVAE(nn.Module):
                                 use_amp=use_amp)
         if vae_type == 'auto_encoder':
             from src.models.VAE.autoencoder import AutoEncoder
-            vae = AutoEncoder(z_dim=8192, 
+            vae = AutoEncoder(z_dim=4096, 
                               in_channels=self.jepa.embed_dim, 
                               in_feature_width=sqrt(self.jepa.patch_embed.num_patches),
                               use_amp=use_amp)

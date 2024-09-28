@@ -112,8 +112,7 @@ class Decoder(nn.Module):
             )
             channels //= 2
             feat_width *= 2
-            backbone.append(nn.BatchNorm2d(channels))
-            backbone.append(nn.ReLU(inplace=True))
+
             if not num_repeat == 0:
                 for _ in range(num_repeat):
                     backbone.append(
@@ -126,6 +125,8 @@ class Decoder(nn.Module):
                             bias=False
                         )
                     )
+            backbone.append(nn.BatchNorm2d(channels))
+            backbone.append(nn.ReLU(inplace=True))
             
         # recover layer
         backbone.append(
@@ -138,8 +139,6 @@ class Decoder(nn.Module):
             )
         )
         feat_width *= 2
-        backbone.append(nn.BatchNorm2d(self.recover_channels))
-        backbone.append(nn.ReLU(inplace=True))
         if not num_repeat == 0:
             for _ in range(num_repeat):
                 backbone.append(
@@ -152,6 +151,8 @@ class Decoder(nn.Module):
                         bias=False
                     )
                 )
+        backbone.append(nn.BatchNorm2d(self.recover_channels))
+        backbone.append(nn.ReLU(inplace=True))
         
         self.backbone = nn.Sequential(*backbone)
         final_layer = []

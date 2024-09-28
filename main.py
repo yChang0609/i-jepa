@@ -21,6 +21,7 @@ class TrainMode:
     vae = "vae"
     cat_vae = "cat_vae"
     ae = "ae"
+    clip_pred = "clip_pred"
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -31,7 +32,8 @@ parser.add_argument(
     {TrainMode.vit_cls}, \
     {TrainMode.vae}, \
     {TrainMode.cat_vae},\
-    {TrainMode.ae}')
+    {TrainMode.ae},\
+    {TrainMode.clip_pred}')
 
 parser.add_argument(
     '--fname', type=str,
@@ -72,7 +74,8 @@ def process_main(rank, train_mode, fname, world_size, devices):
     if train_mode == TrainMode.jepa_linear_prob \
         or train_mode == TrainMode.vae \
         or train_mode == TrainMode.cat_vae \
-        or train_mode == TrainMode.ae:
+        or train_mode == TrainMode.ae \
+        or train_mode == TrainMode.clip_pred:
         params = None
         yaml_flie = os.path.join(fname,'params-ijepa.yaml')
         with open(yaml_flie, 'r') as y_file:
@@ -94,6 +97,9 @@ def process_main(rank, train_mode, fname, world_size, devices):
     elif train_mode == TrainMode.vit_cls:
         from src.trian_vit_cls import main as vit_main
         vit_main(args=params, mount_path=mount_path_env)
+    elif train_mode == TrainMode.clip_pred:
+        from src.clip_predict import main as clip_pred_main
+        clip_pred_main(args=params, mount_path=mount_path_env)
     elif train_mode == TrainMode.vae  \
         or train_mode == TrainMode.cat_vae  \
         or train_mode == TrainMode.ae     :
