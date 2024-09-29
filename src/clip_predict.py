@@ -48,6 +48,10 @@ from src.transforms import make_transforms
 from einops import rearrange
 from src.models.VAE.encoder_decoder import Encoder
 
+# Change Patch Embed layer
+from math import sqrt
+from src.models.vision_transformer import PatchEmbed
+
 # -- MineCLIP
 import hashlib
 import hydra
@@ -71,12 +75,13 @@ logger = logging.getLogger()
 
 class DirectlyEncoder(nn.Module):
     def __init__(self, image_size, out_dim):
+        super().__init__()
         self.encoder = Encoder(
                 in_channels = 3, 
                 in_feature_width =  image_size[0],
                 final_feature_width = 4,
                 stem_channels=256, 
-                num_repeat=2
+                num_repeat=0
             )
         
         self.final_layer = nn.Linear(
@@ -89,9 +94,8 @@ class DirectlyEncoder(nn.Module):
         x = rearrange(x, "B C H W  -> B (C H W)", C=self.encoder.last_channels, H=self.encoder.final_feature_width)
         return self.final_layer(x)
 
-
 class Predictor(nn.Module):
-    def __init__(self, image_size, pred_dim, pre_train=None, freeze=True):
+    def __init__(self, image_size, pred_dim, pre_train=None, freeze=True, patch_embed_change=True):
         super().__init__()
         self.have_pretrain = False
         if pre_train == None:
@@ -102,16 +106,25 @@ class Predictor(nn.Module):
             if freeze:
                 for param in encode_model.parameters():
                     param.requires_grad = False
+            if patch_embed_change:
+                patch_size = image_size[0] // sqrt(encode_model.patch_embed.num_patches)
+                patch_embed = PatchEmbed(
+                    img_size=image_size[0],
+                    patch_size=int(patch_size),
+                    in_chans=3,
+                    embed_dim=int(encode_model.embed_dim)
+                    )
+            encode_model.patch_embed=patch_embed
             self.output_layer = nn.Sequential(
-                    nn.AvgPool1d(kernel_size=pre_train.embed_dim),
-                    nn.BatchNorm1d(pre_train.embed_dim),
-                    nn.Linear(pre_train.embed_dim, pred_dim),
+                nn.BatchNorm1d(encode_model.embed_dim),
+                nn.Linear(encode_model.embed_dim, pred_dim)
             )
         self.encode_model = encode_model
 
     def forward(self, images):
         x = self.encode_model(images)
         if self.have_pretrain:
+            x = x.mean(dim = 1)
             x = self.output_layer(x)
         return x
 
@@ -192,7 +205,14 @@ def main(args, mount_path, resume_preempt=False):
 
     # -- Trianing setting 
     clip_pred_type = args['training']['cilp_pred']['predictor_type']
-
+    patch_embed_change = args['training']['cilp_pred']['patch_embed_change']['is_change']
+    if patch_embed_change:
+        model_patch_size = args['training']['cilp_pred']['patch_embed_change']['orig_patch_size']
+        model_crop_size  = args['training']['cilp_pred']['patch_embed_change']['orig_crop_size']
+    else:
+        model_patch_size = patch_size
+        model_crop_size  = crop_size
+        
     # -- LOGGING
     folder = args['logging']['folder']
     tag = args['logging']['write_tag']
@@ -222,9 +242,9 @@ def main(args, mount_path, resume_preempt=False):
     pretrain_load_path =  os.path.join(folder, r_file) if r_file is not None else pretrain_latest_path
 
     tag = "clip_predict"
-    log_file = os.path.join(folder, f'{tag}_r{rank}.csv')
-    pred_save_path = os.path.join(folder, f'{tag}' + '-ep{epoch}.pth.tar')
-    pred_latest_path = os.path.join(folder, f'{tag}-latest.pth.tar')
+    log_file = os.path.join(folder, f'{clip_pred_type}-{tag}_r{rank}.csv')
+    pred_save_path = os.path.join(folder, f'{clip_pred_type}-{tag}' + '-ep{epoch}.pth.tar')
+    pred_latest_path = os.path.join(folder, f'{clip_pred_type}-{tag}-latest.pth.tar')
 
     # -- make csv_logger
     csv_logger = CSVLogger(log_file,
@@ -235,8 +255,10 @@ def main(args, mount_path, resume_preempt=False):
                            ('%d', 'time (ms)'))
     
     # -- init model
-    @hydra.load_clip(config_name="conf", config_path=f"{mount_path}/logs/mineclip", version_base="1.1")
-    def load_clip(cfg):
+    # sys.argv = sys.argv[:1]
+    # @hydra.main(config_name="conf", config_path=f"{mount_path}/logs/mineclip", version_base="1.1")
+    def load_clip():
+        cfg = OmegaConf.load(f"{mount_path}/logs/mineclip/conf.yaml")
         OmegaConf.set_struct(cfg, False)
         ckpt = cfg.pop("ckpt")
         OmegaConf.set_struct(cfg, True)
@@ -248,11 +270,12 @@ def main(args, mount_path, resume_preempt=False):
         return model
 
     clip_model = load_clip()
-
+    # logger.info(clip_model)
+    
     encoder, predictor = init_model(
         device=device,
-        patch_size=patch_size,
-        crop_size=crop_size,
+        patch_size=model_patch_size,
+        crop_size=model_crop_size,
         pred_depth=pred_depth,
         pred_emb_dim=pred_emb_dim,
         model_name=model_name,
@@ -287,15 +310,18 @@ def main(args, mount_path, resume_preempt=False):
             drop_last=True)
 
     predictor = Predictor(
-        image_size=[224,224], 
+        image_size=[crop_size, crop_size], 
         pred_dim=clip_model.clip_model.vision_model.output_dim,
         pre_train=(None if clip_pred_type=="Directly" else encoder),
         freeze=(False if clip_pred_type=="Directly" else True),
+        patch_embed_change=patch_embed_change
         )
-    
+    logger.info(predictor)
     optimizer = torch.optim.AdamW(predictor.parameters())
     criterion = nn.MSELoss()
     predictor.to(device)
+    
+    predictor.load()
     
     def save_checkpoint(epoch):
         save_dict = {
@@ -318,7 +344,6 @@ def main(args, mount_path, resume_preempt=False):
 
         loss_meter = AverageMeter()
         time_meter = AverageMeter()
-        testing_set_loss_meter = AverageMeter()
 
         for itr, udata in enumerate(train_loader):
             imgs, _ = udata
@@ -329,7 +354,7 @@ def main(args, mount_path, resume_preempt=False):
 
                 with torch.no_grad():
                     resize_images = resize_and_crop(imgs)
-                    clip_features = clip_model.encode_video(resize_images)#[batch, 512]
+                    clip_features = clip_model.forward_image_features(resize_images)#[batch, 512]
 
                 outputs = predictor(imgs)
                 
@@ -372,18 +397,19 @@ def main(args, mount_path, resume_preempt=False):
 
         predictor.eval()
         with torch.no_grad():
+            testing_set_loss_meter = AverageMeter()
             for imgs, _ in test_loader:
                 imgs = imgs.to(device)
 
                 resize_images = resize_and_crop(imgs)
-                clip_features = clip_model.encode_video(resize_images)#[batch, 512]
+                clip_features = clip_model.forward_image_features(resize_images)#[batch, 512]
 
                 outputs = predictor(imgs)
 
                 loss = criterion(outputs, clip_features)
                 testing_set_loss_meter.update(loss)
         predictor.train()
-        logger.info(f'Test set Accuracy[top-1/top-5]: {testing_set_loss_meter.avg}')
+        logger.info(f'Testing set Loss avg: {testing_set_loss_meter.avg}')
 
         # -- Save Checkpoint after every epoch
         logger.info('avg. loss %.3f' % loss_meter.avg)
