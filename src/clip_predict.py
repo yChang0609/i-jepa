@@ -43,6 +43,7 @@ from src.helper import (
     init_model,
     init_opt)
 from src.transforms import make_transforms
+from torchvision import transforms
 
 # Directly encoder 
 from einops import rearrange
@@ -62,6 +63,7 @@ from mineclip import MineCLIP
 log_timings = True
 log_freq = 10
 checkpoint_freq = 150
+normalize_function = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 # --
 
 _GLOBAL_SEED = 0
@@ -80,7 +82,7 @@ class DirectlyEncoder(nn.Module):
                 in_channels = 3, 
                 in_feature_width =  image_size[0],
                 final_feature_width = 4,
-                stem_channels=256, 
+                stem_channels=16, 
                 num_repeat=0
             )
         
@@ -114,7 +116,7 @@ class Predictor(nn.Module):
                     in_chans=3,
                     embed_dim=int(encode_model.embed_dim)
                     )
-            encode_model.patch_embed=patch_embed
+                encode_model.patch_embed=patch_embed
             self.output_layer = nn.Sequential(
                 nn.BatchNorm1d(encode_model.embed_dim),
                 nn.Linear(encode_model.embed_dim, pred_dim)
@@ -128,19 +130,19 @@ class Predictor(nn.Module):
             x = self.output_layer(x)
         return x
 
-def resize_and_crop(img, target_size=(160, 256)):
+def preprocess(imgs, target_size=(160, 256)):
     # [batch, channels, height, width]
-    _, _, h, w = img.shape
+    _, _, h, w = imgs.shape
     target_h, target_w = target_size
-    
+
     # Step 1
-    resized_img = F.interpolate(img, size=(h, target_w), mode='bilinear', align_corners=False)
+    resized_imgs = F.interpolate(imgs, size=(h, target_w), mode='bilinear', align_corners=False)
     
     # Step 2
-    start_h = (h - target_h) // 2  # 中心開始的高度
-    cropped_img = resized_img[:, :, start_h:start_h + target_h, :]  # 裁剪高度
+    start_h = (h - target_h) // 2  
+    cropped_imgs = resized_imgs[:, :, start_h:start_h + target_h, :]  
     
-    return cropped_img
+    return cropped_imgs
 
 def main(args, mount_path, resume_preempt=False):
 
@@ -242,17 +244,21 @@ def main(args, mount_path, resume_preempt=False):
     pretrain_load_path =  os.path.join(folder, r_file) if r_file is not None else pretrain_latest_path
 
     tag = "clip_predict"
-    log_file = os.path.join(folder, f'{clip_pred_type}-{tag}_r{rank}.csv')
+    train_log_file = os.path.join(folder, f'{clip_pred_type}-{tag}-training-r{rank}.csv')
+    test_log_file = os.path.join(folder, f'{clip_pred_type}-{tag}-testing-r{rank}.csv')
     pred_save_path = os.path.join(folder, f'{clip_pred_type}-{tag}' + '-ep{epoch}.pth.tar')
     pred_latest_path = os.path.join(folder, f'{clip_pred_type}-{tag}-latest.pth.tar')
 
     # -- make csv_logger
-    csv_logger = CSVLogger(log_file,
+    train_csv_logger = CSVLogger(train_log_file,
                            ('%d', 'epoch'),
                            ('%d', 'itr'),
                            ('%.5f', 'pred_loss'),
                            ('%.2e', 'mem'),
                            ('%d', 'time (ms)'))
+    test_csv_logger = CSVLogger(test_log_file,
+                           ('%d', 'epoch'),
+                           ('%.5f', 'pred_loss'))
     
     # -- init model
     # sys.argv = sys.argv[:1]
@@ -271,22 +277,22 @@ def main(args, mount_path, resume_preempt=False):
 
     clip_model = load_clip()
     # logger.info(clip_model)
-    
-    encoder, predictor = init_model(
-        device=device,
-        patch_size=model_patch_size,
-        crop_size=model_crop_size,
-        pred_depth=pred_depth,
-        pred_emb_dim=pred_emb_dim,
-        model_name=model_name,
-        conv_channels = conv_channels,
-        conv_strides = conv_strides)
-    del predictor
+    if not clip_pred_type=="Directly":
+        encoder, predictor = init_model(
+            device=device,
+            patch_size=model_patch_size,
+            crop_size=model_crop_size,
+            pred_depth=pred_depth,
+            pred_emb_dim=pred_emb_dim,
+            model_name=model_name,
+            conv_channels = conv_channels,
+            conv_strides = conv_strides)
+        del predictor
 
-    encoder, _ = load_encoder(
-        device=device,
-        r_path=pretrain_load_path,
-        encoder=encoder)
+        encoder, _ = load_encoder(
+            device=device,
+            r_path=pretrain_load_path,
+            encoder=encoder)
     
     transform = make_transforms(
         crop_size=crop_size,
@@ -294,10 +300,11 @@ def main(args, mount_path, resume_preempt=False):
         gaussian_blur=use_gaussian_blur,
         horizontal_flip=use_horizontal_flip,
         color_distortion=use_color_distortion,
-        color_jitter=color_jitter)
+        color_jitter=color_jitter,
+        normalize=False)
 
     # -- init data-loaders/samplers
-    dataset_imgnet, train_loader, test_loader = make_imagenet_tiny(
+    dataset, train_loader, test_loader = make_imagenet_tiny(
             transform=transform,
             batch_size=batch_size,
             pin_mem=pin_mem,
@@ -321,8 +328,6 @@ def main(args, mount_path, resume_preempt=False):
     criterion = nn.MSELoss()
     predictor.to(device)
     
-    predictor.load()
-    
     def save_checkpoint(epoch):
         save_dict = {
             'predictor':predictor.state_dict(),
@@ -336,7 +341,7 @@ def main(args, mount_path, resume_preempt=False):
                 torch.save(save_dict, pred_save_path.format(epoch=f'{epoch + 1}'))
 
     start_epoch = 0
-    num_epochs = 100 if num_epochs > 100 else num_epochs
+    num_epochs = 100 #if num_epochs > 100 else num_epochs
     torch.cuda.empty_cache() 
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
@@ -353,10 +358,11 @@ def main(args, mount_path, resume_preempt=False):
                 optimizer.zero_grad()
 
                 with torch.no_grad():
-                    resize_images = resize_and_crop(imgs)
+                    resize_images = preprocess(imgs * 255.0)
                     clip_features = clip_model.forward_image_features(resize_images)#[batch, 512]
 
-                outputs = predictor(imgs)
+                normal_imgs = normalize_function(imgs)
+                outputs = predictor(normal_imgs)
                 
                 loss = criterion(outputs, clip_features)
                 loss.backward()
@@ -373,7 +379,7 @@ def main(args, mount_path, resume_preempt=False):
             # -- Logging
             def log_stats():
                 mem = torch.cuda.max_memory_allocated() / 1024.**2
-                csv_logger.log(epoch + 1, itr, loss, mem, etime)
+                train_csv_logger.log(epoch + 1, itr, loss, mem, etime)
                 if (itr % log_freq == 0) or np.isnan(loss) or np.isinf(loss):
                     logger.info('[%d, %5d] loss: %.3f '
                                 '[mem: %.2e] '
@@ -401,14 +407,16 @@ def main(args, mount_path, resume_preempt=False):
             for imgs, _ in test_loader:
                 imgs = imgs.to(device)
 
-                resize_images = resize_and_crop(imgs)
+                resize_images = preprocess(imgs * 255.0)
                 clip_features = clip_model.forward_image_features(resize_images)#[batch, 512]
 
-                outputs = predictor(imgs)
+                normal_imgs = normalize_function(imgs)
+                outputs = predictor(normal_imgs)
 
                 loss = criterion(outputs, clip_features)
                 testing_set_loss_meter.update(loss)
         predictor.train()
+        test_csv_logger.log(epoch + 1, testing_set_loss_meter.avg)
         logger.info(f'Testing set Loss avg: {testing_set_loss_meter.avg}')
 
         # -- Save Checkpoint after every epoch

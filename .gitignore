@@ -1,8 +1,18 @@
-*.swp
-*.swo
+# Experiments config files
 configs/RunExperiments/*
 experiments/*
+
+# Dataset
 dataset/*
+
+# Log files
 logs/*
+
+# Run sh files
+eval.sh
+
+# Other
+*.swp
+*.swo
 __pycache__
 .DS_Store

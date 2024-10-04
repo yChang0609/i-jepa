@@ -348,6 +348,8 @@ def main(args, mount_path, vae_type , resume_preempt=False):
         save_dict = {
             'vae':jepa_vae.vae.state_dict(),
             'opt': vae_optimizer.state_dict(),
+            'visual_model':emb_decoder.state_dict(),
+            'visual_opt':visual_optimizer.state_dict(),
             'epoch': epoch,
             'loss': vae_loss_meter.avg,
         }
