@@ -52,7 +52,7 @@ from PIL import Image
 # --
 log_timings = True
 log_freq = 10
-checkpoint_freq = 150
+checkpoint_freq = 100
 # --
 
 _GLOBAL_SEED = 0
@@ -460,45 +460,45 @@ def main(args, mount_path, vae_type , resume_preempt=False):
                                    visual_time_meter.avg))
             log_stats()
             assert not np.isnan(loss_list[0]), 'loss is nan'
+        if (epoch+1) % 10 == 0 or (epoch+1) == 1:
+            with torch.no_grad():
+                def tensor2pil(tensor):
+                    mean = [0.485, 0.456, 0.406]
+                    std = [0.229, 0.224, 0.225]
+                    images = tensor * torch.tensor(std).view(3, 1, 1) + torch.tensor(mean).view(3, 1, 1)
+                    images = torch.clamp(images, 0, 1)
+                    image = images.permute(1, 2, 0).numpy()
+                    image_np = (image * 255).astype(np.uint8)
+                    return Image.fromarray(image_np)
 
-        with torch.no_grad():
-            def tensor2pil(tensor):
-                mean = [0.485, 0.456, 0.406]
-                std = [0.229, 0.224, 0.225]
-                images = tensor * torch.tensor(std).view(3, 1, 1) + torch.tensor(mean).view(3, 1, 1)
-                images = torch.clamp(images, 0, 1)
-                image = images.permute(1, 2, 0).numpy()
-                image_np = (image * 255).astype(np.uint8)
-                return Image.fromarray(image_np)
+                for imgs, _ in unsupervised_loader:
+                    idx = 0 #torch.randint(0, images.size(0), (1,)).item() 
+                    images = imgs.to(device)
+                    emb = jepa_vae.jepa(images)
+                    z_dis = jepa_vae.vae.encode(emb)
+                    
+                    het_emb_list = [jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis)) for _ in range(num_sample) ]
+                    
+                    hat_jepa_images = emb_decoder(emb)
+                    hat_vae_images_list = [emb_decoder(het_emb_list[i]) for i in range(num_sample)]
+      
+                    
+                    random_image_np = images[idx].cpu()
+                    hat_jepa_image_np = hat_jepa_images[idx].cpu()
+                    hat_vae_image_np_list = [hat_vae_images_list[i][idx].cpu() for i in range(num_sample)]
 
-            for images, _ in unsupervised_loader:
-                idx = torch.randint(0, images.size(0), (1,)).item() 
-                random_images = images.to(device)
-                emb = jepa_vae.jepa(random_images)
-                z_dis = jepa_vae.vae.encode(emb)
-                
-                het_emb_list = [jepa_vae.vae.decode(jepa_vae.vae.sample(z_dis)) for _ in range(num_sample) ]
-                
-                hat_jepa_images = emb_decoder(emb)
-                hat_vae_images_list = [emb_decoder(het_emb_list[i]) for i in range(num_sample)]
-  
-                
-                random_image_np = random_images[idx].cpu()
-                hat_jepa_image_np = hat_jepa_images[idx].cpu()
-                hat_vae_image_np_list = [hat_vae_images_list[i][idx].cpu() for i in range(num_sample)]
+                    image_save_path = os.path.join(img_folder, f'vae_{epoch+1}-image')
+                    os.mkdir(image_save_path)
+                    image = tensor2pil(random_image_np)
+                    image.save(image_save_path+'/orig_imag.png')
+                    image = tensor2pil(hat_jepa_image_np)
+                    image.save(image_save_path+'/hat_jepa_image.png')
+                    for i in range(num_sample):
+                        image = tensor2pil(hat_vae_image_np_list[i])
+                        image.save(image_save_path+f'/hat_vae_image_{i+1}.png')
 
-                image_save_path = os.path.join(img_folder, f'vae_{epoch+1}-image')
-                os.mkdir(image_save_path)
-                image = tensor2pil(random_image_np)
-                image.save(image_save_path+'/orig_imag.png')
-                image = tensor2pil(hat_jepa_image_np)
-                image.save(image_save_path+'/hat_jepa_image.png')
-                for i in range(num_sample):
-                    image = tensor2pil(hat_vae_image_np_list[i])
-                    image.save(image_save_path+f'/hat_vae_image_{i+1}.png')
-
-                break  
-        
+                    break  
+            
         # -- Save Checkpoint after every epoch
         logger.info('avg. loss %.3f' % vae_loss_meter.avg)
         save_checkpoint(epoch+1)

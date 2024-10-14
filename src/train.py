@@ -277,7 +277,7 @@ def main(args, mount_path, resume_preempt=False):
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
         logger.info('Epoch %d' % (epoch + 1))
-
+        torch.cuda.empty_cache()
         # -- update distributed-data-loader epoch
         unsupervised_sampler.set_epoch(epoch)
 
